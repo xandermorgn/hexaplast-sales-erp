@@ -1,0 +1,29 @@
+{
+  "75a308f79759a964119095e5a3c098f903d1f1ac9a886fd9a9d513416a069818": {
+    "userId": 5,
+    "loginId": "vrajpatel",
+    "name": "Vraj Patel",
+    "role": "master_admin",
+    "department": "design",
+    "createdAt": 1770898567557,
+    "expiresAt": 1771503367557
+  },
+  "1e1b2a211177812dd4332fbb67a9a9cba257e0daac8f18d90659241e923d7545": {
+    "userId": 5,
+    "loginId": "vrajpatel",
+    "name": "Vraj Patel",
+    "role": "master_admin",
+    "department": "design",
+    "createdAt": 1771050148574,
+    "expiresAt": 1771654948574
+  },
+  "65a87c3dc7c3ade8e8dfbee3f3d9f4b2d493ebe15b5749288aea69c7d8f3e7b4": {
+    "userId": 5,
+    "loginId": "vrajpatel",
+    "name": "Vraj Patel",
+    "role": "master_admin",
+    "department": "design",
+    "createdAt": 1771237006773,
+    "expiresAt": 1771841806773
+  }
+}

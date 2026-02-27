@@ -1,0 +1,98 @@
+{
+  "707779e42a30ddeccab6c2a8b7752ec343e14beb33b3debd90775133d90afce2": {
+    "userId": 2,
+    "loginId": "master01",
+    "name": "Master 01",
+    "role": "master_admin",
+    "createdAt": 1772097118859,
+    "expiresAt": 1772701918859
+  },
+  "3a15235f327d08675b413d18abe608586f99f47c2321353b1c4b2cc6245deb37": {
+    "userId": 0,
+    "loginId": "Xander",
+    "name": "Xander",
+    "role": "server_admin",
+    "createdAt": 1772102576659,
+    "expiresAt": 1772707376659
+  },
+  "fc17d23d151acf9b8ca5e6dcdf52b81317f86b3c3cf4255aa086a29d270ef747": {
+    "userId": 0,
+    "loginId": "Xander",
+    "name": "Xander",
+    "role": "server_admin",
+    "createdAt": 1772112732176,
+    "expiresAt": 1772717532176
+  },
+  "40fb1f7f638b671afec93f7579c4460db10051e982abc6a0c182fb7e3ca1836e": {
+    "userId": 0,
+    "loginId": "Xander",
+    "name": "Xander",
+    "role": "server_admin",
+    "createdAt": 1772112991195,
+    "expiresAt": 1772717791195
+  },
+  "fdd4333ecd8826e80be64b318d6a628821349b5258a421c4800210d484ae2e3e": {
+    "userId": 0,
+    "loginId": "Xander",
+    "name": "Xander",
+    "role": "server_admin",
+    "createdAt": 1772113120342,
+    "expiresAt": 1772717920342
+  },
+  "75932669bb30d502d284144bd2a04a9bec9608f616ccc56cc1b3187a3545a1f0": {
+    "userId": 3,
+    "loginId": "master",
+    "name": "Master Admin",
+    "role": "master_admin",
+    "createdAt": 1772113144761,
+    "expiresAt": 1772717944761
+  },
+  "1c67c4f0d73b8d41d46bcdb548e89b79cdc70ae61727e020210c1d500ab9a25c": {
+    "userId": 4,
+    "loginId": "vrajpatel",
+    "name": "Vraj Patel",
+    "role": "employee",
+    "createdAt": 1772113266360,
+    "expiresAt": 1772718066360
+  },
+  "f80d9e6506f7ce1662951e80bd0d50cfd9894de014d876ae48586319f2df074b": {
+    "userId": 4,
+    "loginId": "vrajpatel",
+    "name": "Vraj Patel",
+    "role": "employee",
+    "createdAt": 1772113430915,
+    "expiresAt": 1772718230915
+  },
+  "9273d77528994e3abf56f35c23c5cb6e2acbef6c0f5450b86ec76673615eff8b": {
+    "userId": 4,
+    "loginId": "vrajpatel",
+    "name": "Vraj Patel",
+    "role": "employee",
+    "createdAt": 1772114304636,
+    "expiresAt": 1772719104636
+  },
+  "85488739d9a24162d9a51adb2636a7c27c24c8f77f6ccc12a995f05b455358c6": {
+    "userId": 3,
+    "loginId": "master",
+    "name": "Master Admin",
+    "role": "master_admin",
+    "createdAt": 1772116597656,
+    "expiresAt": 1772721397656
+  },
+  "77165cb3066555d87efe456f9d2ff9c6b32b669020a12b97f67e51112a8d92a8": {
+    "userId": 4,
+    "loginId": "vrajpatel",
+    "name": "Vraj Patel",
+    "role": "employee",
+    "createdAt": 1772168429173,
+    "expiresAt": 1772773229173
+  },
+  "98d51d42630b6cf2ed547d9be99da7c31eb4f780ab75d57d7b9af93aaac22df2": {
+    "userId": 3,
+    "loginId": "master",
+    "name": "Master Admin",
+    "role": "master_admin",
+    "createdAt": 1772171563671,
+    "expiresAt": 1772776363671
+  }
+}

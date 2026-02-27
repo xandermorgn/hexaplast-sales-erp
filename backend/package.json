@@ -1,0 +1,30 @@
+{
+  "name": "hexaplast-erp-backend",
+  "version": "1.0.0",
+  "description": "Backend authentication server for Hexaplast ERP",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "seed": "node scripts/seed.js"
+  },
+  "keywords": [
+    "erp",
+    "authentication",
+    "express",
+    "sqlite"
+  ],
+  "author": "Xander",
+  "license": "ISC",
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "better-sqlite3": "^12.5.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
+    "socket.io": "^4.7.5",
+    "xlsx": "^0.18.5"
+  }
+}
