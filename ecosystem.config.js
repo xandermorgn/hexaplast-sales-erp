@@ -12,22 +12,18 @@
 module.exports = {
   apps: [
     {
-      name: 'hexaplast-erp',
-      script: 'node_modules/.bin/next',
-      args: 'start -p 3000 -H 0.0.0.0',
+      name: "hexaplast-erp",
+      script: "node",
+      args: "node_modules/next/dist/bin/next start -p 3000 -H 0.0.0.0",
+      cwd: "D:/hexaplast-sales-erp",
       env: {
-        NODE_ENV: 'production',
-        PORT: 3000,
+        NODE_ENV: "production",
       },
       instances: 1,
-      exec_mode: 'fork',
+      exec_mode: "fork",
       autorestart: true,
       watch: false,
-      max_memory_restart: '1G',
-      error_file: './logs/erp-error.log',
-      out_file: './logs/erp-out.log',
-      merge_logs: true,
-      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+      max_memory_restart: "1G",
     },
   ],
 };
