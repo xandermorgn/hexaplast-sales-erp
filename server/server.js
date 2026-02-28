@@ -89,10 +89,10 @@ const httpServer = http.createServer(app);
 // Socket.IO server (signal-only) for LAN real-time updates
 initSocket(httpServer, { corsOrigin: originCheck });
 
-httpServer.listen(PORT, () => {
-  console.log(`✓ Hexaplast Sales ERP Backend running on http://localhost:${PORT}`);
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`Backend running on port ${PORT}`);
   console.log(`✓ Database: SQLite (sql.js)`);
-  console.log(`✓ Auth endpoint: http://localhost:${PORT}/api/auth/login`);
+  console.log(`✓ Auth endpoint: http://127.0.0.1:${PORT}/api/auth/login`);
 });
 
 process.on('SIGINT', () => {
