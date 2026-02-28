@@ -1,7 +1,7 @@
 import { get, query, run } from '../config/database.js';
 import { generateNextPerformaNumber } from '../utils/numberGenerator.js';
 import { logAudit, AUDIT_ACTIONS, ENTITY_TYPES } from '../utils/auditLogger.js';
-import { emitSalesUpdate } from '../realtime/socket.js';
+const emitSalesUpdate = () => {}; // no-op stub – socket.io removed
 
 function toNullableInt(value) {
   if (value === undefined || value === null || value === '') return null;

@@ -14,8 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
-import { getSocket } from "@/lib/socket"
-import { API_BASE } from "@/lib/api"
+// socket.io removed – notifications will use polling or SSE in future
 import { useToast } from "@/hooks/use-toast"
 
 interface MenuItem {
@@ -165,27 +164,7 @@ export function DashboardLayout({
 
   const [internalNotifications, setInternalNotifications] = useState<Notification[]>([])
 
-  useEffect(() => {
-    const socket = getSocket()
-    const handler = (n: any) => {
-      const notif: Notification = {
-        id: String(n?.id ?? Date.now()),
-        title: String(n?.title ?? "Notification"),
-        message: String(n?.message ?? ""),
-        time: n?.time ? new Date(n.time) : new Date(),
-        read: Boolean(n?.read ?? false),
-        workOrderId: n?.workOrderId ? String(n.workOrderId) : undefined,
-      }
-
-      setInternalNotifications((prev) => [notif, ...prev])
-      toast({ title: notif.title, description: notif.message })
-    }
-
-    socket.on("notification:new", handler)
-    return () => {
-      socket.off("notification:new", handler)
-    }
-  }, [])
+  // Socket.io notifications disabled – will be replaced with polling/SSE
 
   const notifications = externalNotifications || internalNotifications
   const unreadCount = notifications.filter((n) => !n.read).length
@@ -196,7 +175,7 @@ export function DashboardLayout({
 
     const loadProfile = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/profile/me`, { credentials: "include" })
+        const res = await fetch(`/api/profile/me`, { credentials: "include" })
         const json = res.ok ? await res.json() : null
         const p = json?.profile
 
@@ -206,7 +185,7 @@ export function DashboardLayout({
         const photoUrl = rawPath
           ? rawPath.startsWith("http://") || rawPath.startsWith("https://")
             ? rawPath
-            : `${API_BASE}${rawPath.startsWith("/") ? "" : "/"}${rawPath}`
+            : rawPath.startsWith("/uploads/") ? `/api/serve-upload/${rawPath.slice(9)}` : rawPath
           : ""
         setProfileData((prev: ProfileData) => ({
           ...prev,

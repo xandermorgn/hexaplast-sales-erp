@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { API_BASE } from "@/lib/api"
 
 interface User {
   loginId: string
@@ -33,7 +32,7 @@ export function useAuth(requiredRole?: string) {
 
   const checkSession = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/auth/me`, {
+      const response = await fetch(`/api/auth/me`, {
         method: "GET",
         credentials: "include", // Important: sends cookies
       })
@@ -91,7 +90,7 @@ export function useAuth(requiredRole?: string) {
 
   const logout = useCallback(async () => {
     try {
-      await fetch(`${API_BASE}/api/auth/logout`, {
+      await fetch(`/api/auth/logout`, {
         method: "POST",
         credentials: "include",
       })

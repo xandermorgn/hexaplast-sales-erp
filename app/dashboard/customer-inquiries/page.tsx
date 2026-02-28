@@ -10,7 +10,6 @@ import { Textarea } from "@/components/ui/textarea"
 import { DateRangeFilter } from "@/components/ui/date-range-filter"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/hooks/use-auth"
-import { getSocket } from "@/lib/socket"
 import { apiUrl } from "@/lib/api"
 
 interface Inquiry {
@@ -164,18 +163,7 @@ export default function CustomerInquiriesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.from_date, filters.to_date])
 
-  useEffect(() => {
-    const socket = getSocket()
-    const refresh = () => {
-      fetchInquiries(filters)
-    }
-
-    socket.on("sales:update", refresh)
-    return () => {
-      socket.off("sales:update", refresh)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.from_date, filters.to_date])
+  // Socket.io real-time refresh disabled – will be replaced with polling/SSE
 
   function openCreateForm() {
     setEditingId(null)

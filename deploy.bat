@@ -1,7 +1,7 @@
 @echo off
 REM ============================================
 REM Hexaplast ERP - Production Deployment Script
-REM Windows 10 On-Prem Server
+REM Single Next.js process on port 3000
 REM ============================================
 
 echo.
@@ -11,7 +11,7 @@ echo ========================================
 echo.
 
 REM Step 1: Pull latest code from Git
-echo [1/5] Pulling latest code from Git...
+echo [1/4] Pulling latest code from Git...
 git pull
 if %errorlevel% neq 0 (
     echo ERROR: Git pull failed!
@@ -21,54 +21,34 @@ if %errorlevel% neq 0 (
 echo Git pull completed successfully.
 echo.
 
-REM Step 2: Install frontend dependencies
-echo [2/5] Installing frontend dependencies...
+REM Step 2: Install dependencies
+echo [2/4] Installing dependencies...
 call npm install
 if %errorlevel% neq 0 (
-    echo ERROR: Frontend npm install failed!
+    echo ERROR: npm install failed!
     pause
     exit /b 1
 )
-echo Frontend dependencies installed.
+echo Dependencies installed.
 echo.
 
-REM Step 3: Install backend dependencies
-echo [3/5] Installing backend dependencies...
-cd backend
-call npm install
-if %errorlevel% neq 0 (
-    echo ERROR: Backend npm install failed!
-    cd ..
-    pause
-    exit /b 1
-)
-cd ..
-echo Backend dependencies installed.
-echo.
-
-REM Step 4: Build Next.js frontend
-echo [4/5] Building Next.js frontend...
+REM Step 3: Build Next.js
+echo [3/4] Building Next.js...
 call npm run build
 if %errorlevel% neq 0 (
-    echo ERROR: Frontend build failed!
+    echo ERROR: Build failed!
     pause
     exit /b 1
 )
-echo Frontend build completed.
+echo Build completed.
 echo.
 
-REM Step 5: Restart PM2 processes
-echo [5/5] Restarting PM2 processes...
-call pm2 restart hexaplast-erp-backend
+REM Step 4: Restart PM2 process
+echo [4/4] Restarting PM2 process...
+call pm2 restart hexaplast-erp
 if %errorlevel% neq 0 (
-    echo WARNING: Backend restart failed. Starting fresh...
-    call pm2 start ecosystem.config.js --only hexaplast-erp-backend
-)
-
-call pm2 restart hexaplast-erp-frontend
-if %errorlevel% neq 0 (
-    echo WARNING: Frontend restart failed. Starting fresh...
-    call pm2 start ecosystem.config.js --only hexaplast-erp-frontend
+    echo WARNING: Restart failed. Starting fresh...
+    call pm2 start ecosystem.config.js
 )
 
 call pm2 save
@@ -83,6 +63,6 @@ echo Current PM2 Status:
 call pm2 list
 echo.
 echo To view logs, run: pm2 logs hexaplast-erp
-echo To stop services, run: pm2 stop all
+echo To stop, run: pm2 stop hexaplast-erp
 echo.
 pause

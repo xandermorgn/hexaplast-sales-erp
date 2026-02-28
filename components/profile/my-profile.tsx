@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useToast } from "@/hooks/use-toast"
 import { Pencil, Save, X, Upload, Trash2 } from "lucide-react"
-import { API_BASE } from "@/lib/api"
 
 interface Profile {
   id: number
@@ -48,7 +47,7 @@ export function MyProfile() {
   const fetchProfile = async () => {
     try {
       setIsLoading(true)
-      const response = await fetch(`${API_BASE}/api/profile/me`, {
+      const response = await fetch(`/api/profile/me`, {
         credentials: "include",
       })
 
@@ -81,7 +80,7 @@ export function MyProfile() {
   const handleSave = async () => {
     try {
       setIsSaving(true)
-      const response = await fetch(`${API_BASE}/api/profile/me`, {
+      const response = await fetch(`/api/profile/me`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -150,7 +149,7 @@ export function MyProfile() {
       const formData = new FormData()
       formData.append("photo", file)
 
-      const response = await fetch(`${API_BASE}/api/profile/photo`, {
+      const response = await fetch(`/api/profile/photo`, {
         method: "POST",
         credentials: "include",
         body: formData,
@@ -189,7 +188,7 @@ export function MyProfile() {
   const handleDeletePhoto = async () => {
     try {
       setIsUploadingPhoto(true)
-      const response = await fetch(`${API_BASE}/api/profile/photo`, {
+      const response = await fetch(`/api/profile/photo`, {
         method: "DELETE",
         credentials: "include",
       })
@@ -242,7 +241,8 @@ export function MyProfile() {
   // Get full photo URL from backend path
   const getPhotoUrl = (photoPath: string | null) => {
     if (!photoPath) return undefined
-    return `${API_BASE}${photoPath}`
+    if (photoPath.startsWith("/uploads/")) return `/api/serve-upload/${photoPath.slice(9)}`
+    return photoPath
   }
 
   if (isLoading) {

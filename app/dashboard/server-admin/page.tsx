@@ -10,7 +10,6 @@ import { MyProfile } from "@/components/profile/my-profile"
 import { useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
 import { apiUrl } from "@/lib/api"
-import { getSocket } from "@/lib/socket"
 
 type MasterAdminUser = {
   id: number
@@ -157,18 +156,7 @@ export default function ServerAdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, user?.role])
 
-  useEffect(() => {
-    const socket = getSocket()
-    const refresh = () => {
-      fetchKpis().catch(() => undefined)
-      fetchWorkOrders().catch(() => undefined)
-    }
-
-    socket.on("sales:update", refresh)
-    return () => {
-      socket.off("sales:update", refresh)
-    }
-  }, [])
+  // Socket.io real-time refresh disabled – will be replaced with polling/SSE
 
   async function handleCreateMasterAdmin(event: FormEvent) {
     event.preventDefault()

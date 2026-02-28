@@ -31,6 +31,7 @@ backend/logs/
 # Uploads and user data
 uploads/
 backend/uploads/
+server/uploads/
 public/uploads/
 
 # Database files (SQLite)
@@ -38,6 +39,9 @@ backend/*.db
 backend/*.sqlite
 backend/*.sqlite3
 backend/database/*.db
+server/data/*.db
+server/data/*.sqlite
+server/data/*.sqlite3
 
 # Testing
 coverage/
