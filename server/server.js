@@ -27,24 +27,15 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 4001;
 
-const allowedOrigins = ['http://hexaplast.local', 'http://192.168.1.250'];
-
-const originCheck = function(origin, callback) {
-  // Allow requests with no origin (server-to-server, curl, health checks)
-  if (!origin) return callback(null, true);
-
-  if (allowedOrigins.includes(origin)) {
-    return callback(null, true);
-  }
-
-  return callback(new Error(`CORS blocked for origin: ${origin}`));
-};
-
 // CORS configuration for session cookies
 app.use(cors({
-  origin: originCheck,
-  credentials: true
+  origin: true,
+  credentials: true,
 }));
+
+const originCheck = function(origin, callback) {
+  return callback(null, true);
+};
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
