@@ -56,10 +56,10 @@ copy .env.example .env
 
 Edit `.env` and set:
 ```env
-NEXT_PUBLIC_API_BASE=http://192.168.1.100:4001
 NODE_ENV=production
 ```
-Replace `192.168.1.100` with your server's IP address.
+
+Frontend must use only same-origin relative API paths (for example `/api/auth/login`).
 
 #### Backend (backend/.env)
 ```bash
@@ -187,8 +187,9 @@ pm2 monit
 To allow other devices on the network to access the ERP:
 
 1. **Configure Frontend Environment**
-   - Set `NEXT_PUBLIC_API_BASE` to server's LAN IP
-   - Example: `http://192.168.1.100:4001`
+   - Do not set a frontend API base URL
+   - Frontend must call relative paths only (for example `/api/auth/login`)
+   - Next.js server rewrites `/api/*` internally to `http://127.0.0.1:4001/api/*`
 
 2. **Windows Firewall**
    - Allow inbound connections on ports 3000 and 4001
@@ -358,11 +359,11 @@ deploy.bat
 ## Architecture Notes
 
 ### API Configuration
-The system uses `lib/api.ts` for API base URL configuration:
-- Reads from `NEXT_PUBLIC_API_BASE` environment variable
-- Defaults to `http://localhost:4001` in development
-- All API calls use the `apiUrl()` helper function
-- No hardcoded external URLs
+The system uses same-origin API calls only:
+- Frontend requests use relative URLs (for example `/api/auth/login`)
+- `lib/api.ts` enforces relative path behavior
+- `next.config.mjs` rewrites `/api/:path*` to `http://127.0.0.1:4001/api/:path*`
+- No frontend hardcoded backend origin
 
 ### Authentication Flow
 1. User logs in via `/api/auth/login`

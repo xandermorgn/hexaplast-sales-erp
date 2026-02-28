@@ -3,11 +3,11 @@
 ## ✅ Configuration Verification
 
 ### API Configuration
-- ✅ **API Base URL**: Configured via `NEXT_PUBLIC_API_BASE` environment variable
-- ✅ **Default**: `http://localhost:4001` (development)
-- ✅ **Production**: Set in `.env` file to server IP (e.g., `http://192.168.1.100:4001`)
-- ✅ **Implementation**: `lib/api.ts` - `apiUrl()` helper function
-- ✅ **No hardcoded URLs**: All API calls use relative paths via `apiUrl()`
+- ✅ **Frontend API Calls**: Same-origin relative paths only (`/api/...`)
+- ✅ **No Frontend Base URL Env**: frontend does not use an API base URL variable
+- ✅ **Implementation**: `lib/api.ts` enforces relative-only API paths
+- ✅ **Proxy**: `next.config.mjs` rewrites `/api/:path*` → `http://127.0.0.1:4001/api/:path*`
+- ✅ **No hardcoded frontend backend origin**
 
 ### Authentication
 - ✅ **Method**: Session-based authentication (no JWT)
@@ -18,7 +18,6 @@
 
 ### Environment Variables
 - ✅ **Frontend (.env)**:
-  - `NEXT_PUBLIC_API_BASE` - Backend API URL
   - `NODE_ENV` - Set to "production"
   
 - ✅ **Backend (backend/.env)**:
@@ -118,7 +117,7 @@
 
 ### Configuration
 - [ ] Copy `.env.example` to `.env`
-- [ ] Set `NEXT_PUBLIC_API_BASE` to server IP
+- [ ] Confirm frontend uses relative API paths only (`/api/...`)
 - [ ] Copy `backend/.env.example` to `backend/.env`
 - [ ] Generate strong `SESSION_SECRET`
 - [ ] Set `NODE_ENV=production` in both .env files
@@ -167,7 +166,7 @@ netstat -ano | findstr :3000
 netstat -ano | findstr :4001
 
 # Test API endpoint
-curl http://localhost:4001/api/auth/check
+curl http://127.0.0.1:4001/api/auth/check
 
 # Check build output
 dir .next
@@ -225,7 +224,7 @@ echo %NODE_ENV%
 - All configuration files created
 - No hardcoded external URLs
 - Session-based authentication configured
-- API calls use relative paths via environment variable
+- API calls use same-origin relative paths only
 - No cloud dependencies
 - Frontend persistence limited to sessionStorage
 - Production build configured with NODE_ENV=production
@@ -244,7 +243,7 @@ echo %NODE_ENV%
 ## 🚨 Important Notes
 
 1. **SESSION_SECRET**: Must be changed from example value in production
-2. **API_BASE**: Must be set to actual server IP/hostname
+2. **Frontend API Calls**: Must remain relative (`/api/...`) with no absolute backend URL
 3. **Firewall**: Ensure ports 3000 and 4001 are accessible on LAN
 4. **Backups**: Set up regular database and uploads backups
 5. **Logs**: Configure log rotation to prevent disk space issues

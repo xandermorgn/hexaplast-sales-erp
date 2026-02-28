@@ -2,7 +2,19 @@
 export const API_BASE = ""
 
 export function apiUrl(path: string) {
-  if (path.startsWith("http://") || path.startsWith("https://")) return path
+  if (!path) return "/"
+
+  // Enforce same-origin requests from frontend code.
+  // If an absolute URL is passed accidentally, drop the origin.
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    try {
+      const parsed = new URL(path)
+      return `${parsed.pathname}${parsed.search}${parsed.hash}` || "/"
+    } catch {
+      return "/"
+    }
+  }
+
   if (!path.startsWith("/")) return `/${path}`
   return path
 }
