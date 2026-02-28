@@ -27,17 +27,20 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 4001;
 
+const allowedOrigins = ['http://hexaplast.local', 'http://192.168.1.250'];
+
 const originCheck = function(origin, callback) {
-  // Allow requests with no origin (like mobile apps, curl, etc.)
+  // Allow requests with no origin (server-to-server, curl, health checks)
   if (!origin) return callback(null, true);
 
-  // LAN/on-prem deployment: allow browser origins on the local network.
-  // Session cookies are still required for protected routes.
-  return callback(null, true);
+  if (allowedOrigins.includes(origin)) {
+    return callback(null, true);
+  }
+
+  return callback(new Error(`CORS blocked for origin: ${origin}`));
 };
 
 // CORS configuration for session cookies
-// Allow all localhost origins in development (including Windsurf preview proxy)
 app.use(cors({
   origin: originCheck,
   credentials: true

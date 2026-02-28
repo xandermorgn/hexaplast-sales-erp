@@ -7,7 +7,7 @@ import { logAudit, AUDIT_ACTIONS, ENTITY_TYPES } from '../utils/auditLogger.js';
 // Cookie options for session
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
+  secure: false,
   sameSite: 'lax',
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days (was 24 hours)
   path: '/'
