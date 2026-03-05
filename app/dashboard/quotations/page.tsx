@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
+import { Printer, Pencil, Trash2 } from "lucide-react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -511,6 +512,35 @@ export default function QuotationsPage() {
     }
   }
 
+  async function deleteQuotation(id: number) {
+    if (!confirm("Are you sure you want to delete this quotation?")) return
+
+    try {
+      const response = await fetch(apiUrl(`/api/quotations/${id}`), {
+        method: "DELETE",
+        credentials: "include",
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data?.message || "Failed to delete quotation")
+      }
+
+      toast({ title: "Success", description: "Quotation deleted" })
+      await fetchQuotations()
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete quotation",
+        variant: "destructive",
+      })
+    }
+  }
+
+  function printQuotation(id: number) {
+    window.open(`/dashboard/quotations/print/${id}`, "_blank")
+  }
+
   function previewAndDownloadPdf() {
     if (!savedQuotation) return
 
@@ -757,9 +787,17 @@ export default function QuotationsPage() {
                     <td className="px-3 py-2">{round2(Number(quotation.total_amount || 0)).toFixed(2)}</td>
                     <td className="px-3 py-2">{quotation.status || "draft"}</td>
                     <td className="px-3 py-2">
-                      <Button size="sm" variant="outline" onClick={() => editQuotation(quotation.id)}>
-                        Edit
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button size="icon" variant="ghost" className="h-8 w-8" title="Print" onClick={() => printQuotation(quotation.id)}>
+                          <Printer className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8" title="Edit" onClick={() => editQuotation(quotation.id)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-red-600 hover:text-red-700" title="Delete" onClick={() => deleteQuotation(quotation.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))

@@ -1,22 +1,61 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
+import { Printer, Pencil, Trash2 } from "lucide-react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { DateRangeFilter } from "@/components/ui/date-range-filter"
 import { useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
 import { apiUrl } from "@/lib/api"
 
-type PerformaOption = {
+type Inquiry = {
   id: number
-  performa_number: string
   inquiry_number: string
   company_name: string | null
+  authorized_person: string | null
+  authorized_phone: string | null
+  email: string | null
+  address: string | null
 }
 
-type WorkOrder = {
+type ProductOption = {
+  key: string
+  product_type: "machine" | "spare"
+  product_id: number
+  label: string
+  sales_price: number
+  gst_percent: number
+  category_name: string
+  sub_category: string
+  product_name: string
+  model_number: string
+  hsn_sac_code: string
+  unit: string
+}
+
+type WOItemForm = {
+  product_key: string
+  product_type: "machine" | "spare" | ""
+  product_id: number | null
+  category_name: string
+  sub_category: string
+  product_name: string
+  model_number: string
+  hsn_sac_code: string
+  unit: string
+  quantity: string
+  price: string
+  discount_percent: string
+  discount_amount: string
+  gst_percent: string
+}
+
+type WorkOrderRow = {
   id: number
   work_order_number: string
   created_at?: string | null
@@ -29,16 +68,76 @@ type WorkOrder = {
   total_discount: number
   total_gst: number
   total_amount: number
-  prepared_by: number | null
-  checked_by: number | null
-  approved_by: number | null
-  prepared_by_name: string | null
-  checked_by_name: string | null
-  approved_by_name: string | null
   status: string | null
   sent_to_production_at?: string | null
-  error_log?: string | null
 }
+
+type WorkOrderDetail = {
+  id: number
+  work_order_number: string
+  performa_id: number | null
+  quotation_id: number | null
+  inquiry_id: number | null
+  inquiry_number: string | null
+  company_name: string | null
+  authorized_person: string | null
+  authorized_phone: string | null
+  email: string | null
+  address: string | null
+  subtotal: number
+  total_discount: number
+  total_gst: number
+  total_amount: number
+  status: string | null
+  work_order_date: string | null
+  calibration_nabl: string | null
+  packing: string | null
+  delivery_date: string | null
+  remarks: string | null
+  apply_gst: number
+  extra_charge_gst_percent: number
+  extra_charge_1: number
+  extra_charge_2: number
+  advance_display: number
+  advance_date: string | null
+  advance_description: string | null
+  advance_amount: number
+  items: {
+    product_type: "machine" | "spare"
+    product_id: number
+    category_name?: string | null
+    sub_category?: string | null
+    product_name?: string | null
+    model_number?: string | null
+    hsn_sac_code?: string | null
+    unit?: string | null
+    quantity: number
+    price: number
+    discount_percent: number
+    discount_amount: number
+    gst_percent: number
+    total: number
+  }[]
+}
+
+const emptyItem = (): WOItemForm => ({
+  product_key: "",
+  product_type: "",
+  product_id: null,
+  category_name: "",
+  sub_category: "",
+  product_name: "",
+  model_number: "",
+  hsn_sac_code: "",
+  unit: "",
+  quantity: "1",
+  price: "0",
+  discount_percent: "0",
+  discount_amount: "0",
+  gst_percent: "0",
+})
+
+const round2 = (v: number) => Math.round(v * 100) / 100
 
 export default function WorkOrdersPage() {
   const router = useRouter()
@@ -72,16 +171,83 @@ export default function WorkOrdersPage() {
     setActiveSection("work-orders")
   }
 
-  const [performas, setPerformas] = useState<PerformaOption[]>([])
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([])
+  const [inquiries, setInquiries] = useState<Inquiry[]>([])
+  const [products, setProducts] = useState<ProductOption[]>([])
+  const [workOrders, setWorkOrders] = useState<WorkOrderRow[]>([])
   const [showForm, setShowForm] = useState(false)
   const [filters, setFilters] = useState({ from_date: "", to_date: "" })
 
-  const filteredWorkOrders = useMemo(() => {
-    return workOrders.filter((workOrder) => {
-      if (!workOrder.created_at) return true
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [inquiryId, setInquiryId] = useState("")
+  const [items, setItems] = useState<WOItemForm[]>([emptyItem()])
 
-      const created = new Date(workOrder.created_at)
+  // Extra detail fields
+  const [workOrderDate, setWorkOrderDate] = useState("")
+  const [calibrationNabl, setCalibrationNabl] = useState("")
+  const [packing, setPacking] = useState("")
+  const [deliveryDate, setDeliveryDate] = useState("")
+  const [remarks, setRemarks] = useState("")
+
+  // GST & Extra Charges
+  const [applyGst, setApplyGst] = useState(true)
+  const [extraChargeGstPercent, setExtraChargeGstPercent] = useState("0")
+  const [extraCharge1, setExtraCharge1] = useState("0")
+  const [extraCharge2, setExtraCharge2] = useState("0")
+
+  // Advance Payment
+  const [advanceDisplay, setAdvanceDisplay] = useState(false)
+  const [advanceDate, setAdvanceDate] = useState("")
+  const [advanceDescription, setAdvanceDescription] = useState("")
+  const [advanceAmount, setAdvanceAmount] = useState("0")
+
+  const selectedInquiry = useMemo(
+    () => inquiries.find((inq) => String(inq.id) === inquiryId) || null,
+    [inquiries, inquiryId],
+  )
+
+  const summary = useMemo(() => {
+    let subtotal = 0
+    let totalDiscount = 0
+    let totalGst = 0
+
+    for (const item of items) {
+      const qty = Math.max(1, Number(item.quantity) || 1)
+      const price = Number(item.price) || 0
+      const base = qty * price
+
+      let discPercent = Number(item.discount_percent) || 0
+      let discAmount = Number(item.discount_amount) || 0
+
+      if (discPercent > 0) {
+        discAmount = (base * discPercent) / 100
+      } else if (discAmount > 0 && base > 0) {
+        discPercent = (discAmount / base) * 100
+      }
+
+      if (discAmount > base) discAmount = base
+
+      const taxable = base - discAmount
+      const gstPercent = Number(item.gst_percent) || 0
+      const gstAmount = applyGst ? (taxable * gstPercent) / 100 : 0
+
+      subtotal += base
+      totalDiscount += discAmount
+      totalGst += gstAmount
+    }
+
+    return {
+      subtotal: round2(subtotal),
+      totalDiscount: round2(totalDiscount),
+      totalGst: round2(totalGst),
+      totalAmount: round2(subtotal - totalDiscount + totalGst),
+    }
+  }, [items, applyGst])
+
+  const filteredWorkOrders = useMemo(() => {
+    return workOrders.filter((wo) => {
+      if (!wo.created_at) return true
+
+      const created = new Date(wo.created_at)
       if (Number.isNaN(created.getTime())) return true
 
       if (filters.from_date) {
@@ -98,11 +264,55 @@ export default function WorkOrdersPage() {
     })
   }, [workOrders, filters.from_date, filters.to_date])
 
-  async function fetchPerformas() {
-    const response = await fetch(apiUrl("/api/performas"), { credentials: "include" })
-    if (!response.ok) throw new Error("Failed to fetch performas")
+  async function fetchInquiries() {
+    const response = await fetch(apiUrl("/api/inquiries"), { credentials: "include" })
+    if (!response.ok) throw new Error("Failed to fetch inquiries")
     const data = await response.json()
-    setPerformas(data.performas || [])
+    setInquiries(data.inquiries || [])
+  }
+
+  async function fetchProducts() {
+    const [machinesRes, sparesRes] = await Promise.all([
+      fetch(apiUrl("/api/products/machines"), { credentials: "include" }),
+      fetch(apiUrl("/api/products/spares"), { credentials: "include" }),
+    ])
+
+    if (!machinesRes.ok || !sparesRes.ok) throw new Error("Failed to fetch products")
+
+    const machinesData = await machinesRes.json()
+    const sparesData = await sparesRes.json()
+
+    const machineOptions: ProductOption[] = (machinesData.products || []).map((p: any) => ({
+      key: `machine-${p.id}`,
+      product_type: "machine" as const,
+      product_id: p.id,
+      label: `[Machine] ${p.product_name || "-"} (${p.product_code || "-"})`,
+      sales_price: Number(p.sales_price) || 0,
+      gst_percent: Number(p.gst_percent) || 0,
+      category_name: p.category || "",
+      sub_category: p.sub_category || "",
+      product_name: p.product_name || "",
+      model_number: p.model_number || "",
+      hsn_sac_code: p.hsn_sac_code || "",
+      unit: p.unit || "Nos",
+    }))
+
+    const spareOptions: ProductOption[] = (sparesData.products || []).map((p: any) => ({
+      key: `spare-${p.id}`,
+      product_type: "spare" as const,
+      product_id: p.id,
+      label: `[Spare] ${p.product_name || "-"} (${p.product_code || "-"})`,
+      sales_price: Number(p.sales_price) || 0,
+      gst_percent: Number(p.gst_percent) || 0,
+      category_name: p.category || "",
+      sub_category: p.sub_category || "",
+      product_name: p.product_name || "",
+      model_number: p.model_number || "",
+      hsn_sac_code: p.hsn_sac_code || "",
+      unit: p.unit || "Nos",
+    }))
+
+    setProducts([...machineOptions, ...spareOptions])
   }
 
   async function fetchWorkOrders() {
@@ -114,7 +324,7 @@ export default function WorkOrdersPage() {
 
   async function loadAll() {
     try {
-      await Promise.all([fetchPerformas(), fetchWorkOrders()])
+      await Promise.all([fetchInquiries(), fetchProducts(), fetchWorkOrders()])
     } catch {
       toast({ title: "Error", description: "Failed to load work order module data", variant: "destructive" })
     }
@@ -125,30 +335,205 @@ export default function WorkOrdersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function createFromPerforma(performaId: number) {
+  function resetForm() {
+    setEditingId(null)
+    setInquiryId("")
+    setItems([emptyItem()])
+    setWorkOrderDate("")
+    setCalibrationNabl("")
+    setPacking("")
+    setDeliveryDate("")
+    setRemarks("")
+    setApplyGst(true)
+    setExtraChargeGstPercent("0")
+    setExtraCharge1("0")
+    setExtraCharge2("0")
+    setAdvanceDisplay(false)
+    setAdvanceDate("")
+    setAdvanceDescription("")
+    setAdvanceAmount("0")
+  }
+
+  function openCreateForm() {
+    resetForm()
+    setShowForm(true)
+  }
+
+  function updateItem(index: number, partial: Partial<WOItemForm>) {
+    setItems((prev) => prev.map((item, i) => (i === index ? { ...item, ...partial } : item)))
+  }
+
+  function onSelectProduct(index: number, productKey: string) {
+    const product = products.find((entry) => entry.key === productKey)
+    if (!product) {
+      updateItem(index, { product_key: "", product_type: "", product_id: null })
+      return
+    }
+
+    updateItem(index, {
+      product_key: product.key,
+      product_type: product.product_type,
+      product_id: product.product_id,
+      price: String(product.sales_price),
+      gst_percent: String(product.gst_percent),
+      category_name: product.category_name,
+      sub_category: product.sub_category,
+      product_name: product.product_name,
+      model_number: product.model_number,
+      hsn_sac_code: product.hsn_sac_code,
+      unit: product.unit,
+    })
+  }
+
+  async function submitWorkOrder(event: FormEvent) {
+    event.preventDefault()
+
+    if (!inquiryId) {
+      toast({ title: "Validation", description: "Please choose inquiry", variant: "destructive" })
+      return
+    }
+
+    const sanitizedItems = items
+      .filter((item) => item.product_type && item.product_id)
+      .map((item) => ({
+        product_type: item.product_type,
+        product_id: item.product_id,
+        category_name: item.category_name,
+        sub_category: item.sub_category,
+        product_name: item.product_name,
+        model_number: item.model_number,
+        hsn_sac_code: item.hsn_sac_code,
+        unit: item.unit,
+        quantity: Number(item.quantity) || 1,
+        price: Number(item.price) || 0,
+        discount_percent: Number(item.discount_percent) || 0,
+        discount_amount: Number(item.discount_amount) || 0,
+        gst_percent: Number(item.gst_percent) || 0,
+      }))
+
+    if (sanitizedItems.length === 0) {
+      toast({ title: "Validation", description: "Please add at least one product", variant: "destructive" })
+      return
+    }
+
     try {
-      const response = await fetch(apiUrl(`/api/work-orders/from-performa/${performaId}`), {
-        method: "POST",
+      const payload = {
+        inquiry_id: Number(inquiryId),
+        items: sanitizedItems,
+        work_order_date: workOrderDate || null,
+        calibration_nabl: calibrationNabl || null,
+        packing: packing || null,
+        delivery_date: deliveryDate || null,
+        remarks: remarks || null,
+        apply_gst: applyGst,
+        extra_charge_gst_percent: Number(extraChargeGstPercent) || 0,
+        extra_charge_1: Number(extraCharge1) || 0,
+        extra_charge_2: Number(extraCharge2) || 0,
+        advance_display: advanceDisplay,
+        advance_date: advanceDate || null,
+        advance_description: advanceDescription || null,
+        advance_amount: Number(advanceAmount) || 0,
+      }
+
+      const isUpdate = Boolean(editingId)
+      const endpoint = isUpdate ? `/api/work-orders/${editingId}` : "/api/work-orders"
+      const response = await fetch(apiUrl(endpoint), {
+        method: isUpdate ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
+        body: JSON.stringify(payload),
       })
 
       const data = await response.json()
-      if (!response.ok) throw new Error(data?.message || "Failed to create work order")
+      if (!response.ok) throw new Error(data?.message || "Failed to save work order")
 
-      const workOrder = data.work_order as WorkOrder
-      if (workOrder?.id) {
-        toast({ title: "Success", description: "Work order created from performa" })
-      }
-
+      toast({ title: "Success", description: isUpdate ? "Work order updated" : "Work order saved" })
       await fetchWorkOrders()
       setShowForm(false)
     } catch (error) {
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create work order",
+        description: error instanceof Error ? error.message : "Failed to save work order",
         variant: "destructive",
       })
     }
+  }
+
+  async function editWorkOrder(id: number) {
+    try {
+      const response = await fetch(apiUrl(`/api/work-orders/${id}`), { credentials: "include" })
+      if (!response.ok) throw new Error("Failed to fetch work order")
+
+      const data = await response.json()
+      const wo = data.work_order as WorkOrderDetail
+
+      setEditingId(wo.id)
+      setInquiryId(wo.inquiry_id ? String(wo.inquiry_id) : "")
+      setWorkOrderDate(wo.work_order_date || "")
+      setCalibrationNabl(wo.calibration_nabl || "")
+      setPacking(wo.packing || "")
+      setDeliveryDate(wo.delivery_date || "")
+      setRemarks(wo.remarks || "")
+      setApplyGst(wo.apply_gst === 1 || wo.apply_gst === undefined)
+      setExtraChargeGstPercent(String(wo.extra_charge_gst_percent || 0))
+      setExtraCharge1(String(wo.extra_charge_1 || 0))
+      setExtraCharge2(String(wo.extra_charge_2 || 0))
+      setAdvanceDisplay(wo.advance_display === 1)
+      setAdvanceDate(wo.advance_date || "")
+      setAdvanceDescription(wo.advance_description || "")
+      setAdvanceAmount(String(wo.advance_amount || 0))
+      setShowForm(true)
+
+      setItems(
+        (wo.items || []).map((item) => ({
+          product_key: `${item.product_type}-${item.product_id}`,
+          product_type: item.product_type,
+          product_id: item.product_id,
+          category_name: item.category_name || "",
+          sub_category: item.sub_category || "",
+          product_name: item.product_name || "",
+          model_number: item.model_number || "",
+          hsn_sac_code: item.hsn_sac_code || "",
+          unit: item.unit || "",
+          quantity: String(item.quantity),
+          price: String(item.price),
+          discount_percent: String(item.discount_percent),
+          discount_amount: String(item.discount_amount),
+          gst_percent: String(item.gst_percent),
+        })),
+      )
+    } catch {
+      toast({ title: "Error", description: "Failed to load work order", variant: "destructive" })
+    }
+  }
+
+  async function deleteWorkOrder(id: number) {
+    if (!confirm("Are you sure you want to delete this work order?")) return
+
+    try {
+      const response = await fetch(apiUrl(`/api/work-orders/${id}`), {
+        method: "DELETE",
+        credentials: "include",
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data?.message || "Failed to delete work order")
+      }
+
+      toast({ title: "Success", description: "Work order deleted" })
+      await fetchWorkOrders()
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete work order",
+        variant: "destructive",
+      })
+    }
+  }
+
+  function printWorkOrder(id: number) {
+    window.open(`/dashboard/work-orders/print/${id}`, "_blank")
   }
 
   if (isLoading) {
@@ -166,21 +551,19 @@ export default function WorkOrdersPage() {
     )
   }
 
-return (
-  <DashboardLayout
-    title="Sales"
-    menuItems={menuItems}
-    activeSection={activeSection}
-    onSectionChange={handleSectionChange}
-    loginId={user?.loginId || ""}
-    onLogout={logout}
-  >
-      <div className="space-y-6">
+  return (
+    <DashboardLayout
+      title="Sales"
+      menuItems={menuItems}
+      activeSection={activeSection}
+      onSectionChange={handleSectionChange}
+      loginId={user?.loginId || ""}
+      onLogout={logout}
+    >
+      <div className="space-y-5">
         <div>
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-800">Sales Work Order</h1>
-            <p className="text-sm text-gray-500">Create work orders from performa with inquiry/products/amount auto-fetch.</p>
-          </div>
+          <h1 className="text-2xl font-semibold text-gray-800">Sales Work Order</h1>
+          <p className="text-sm text-gray-500">Create and manage work orders from customer inquiries.</p>
         </div>
 
         <div className="flex items-center justify-between gap-4">
@@ -207,52 +590,196 @@ return (
                 Back to List
               </Button>
             ) : null}
-            <Button className="h-10 px-6 text-base" onClick={() => setShowForm(true)}>
+            <Button className="h-10 px-6 text-base" onClick={openCreateForm}>
               + New
             </Button>
           </div>
         </div>
 
         {showForm && (
-          <div className="rounded-lg border border-gray-200 bg-white p-5 space-y-4">
+        <form onSubmit={submitWorkOrder} className="rounded-lg border border-gray-200 bg-white p-5 space-y-4">
+          {/* Customer Inquiry Selector */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <h3 className="text-base font-medium text-gray-800">Create Work Order from Performa</h3>
-              <p className="text-sm text-gray-500">Select a performa and generate work order.</p>
+              <Label>Customer Inquiry</Label>
+              <select
+                className="w-full border border-gray-300 rounded-md h-10 px-3"
+                value={inquiryId}
+                onChange={(e) => setInquiryId(e.target.value)}
+                required
+              >
+                <option value="">Select inquiry</option>
+                {inquiries.map((inquiry) => (
+                  <option key={inquiry.id} value={inquiry.id}>
+                    {(inquiry.company_name || "-") + " - " + inquiry.inquiry_number}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label>Work Order Date</Label>
+              <Input type="date" value={workOrderDate} onChange={(e) => setWorkOrderDate(e.target.value)} />
+            </div>
+          </div>
+
+          {/* Auto-fill customer info */}
+          <div className="rounded border border-gray-100 p-3 bg-gray-50 text-sm grid grid-cols-1 md:grid-cols-2 gap-2">
+            <p><span className="font-medium">Contact:</span> {selectedInquiry?.authorized_person || "-"}</p>
+            <p><span className="font-medium">Phone:</span> {selectedInquiry?.authorized_phone || "-"}</p>
+            <p><span className="font-medium">Email:</span> {selectedInquiry?.email || "-"}</p>
+            <p><span className="font-medium">Address:</span> {selectedInquiry?.address || "-"}</p>
+          </div>
+
+          {/* Extra Detail Fields */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <Label>Calibration / NABL</Label>
+              <Input value={calibrationNabl} onChange={(e) => setCalibrationNabl(e.target.value)} placeholder="e.g. NABL Certified" />
+            </div>
+            <div>
+              <Label>Packing</Label>
+              <Input value={packing} onChange={(e) => setPacking(e.target.value)} placeholder="e.g. Wooden Box" />
+            </div>
+            <div>
+              <Label>Delivery Date</Label>
+              <Input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
+            </div>
+          </div>
+
+          {/* Product Grid */}
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="font-medium text-gray-800">Work Order Items</h3>
+              <Button type="button" variant="outline" onClick={() => setItems((prev) => [...prev, emptyItem()])}>Add Item</Button>
             </div>
 
-            <div className="rounded border border-gray-200 overflow-x-auto">
+            <div className="overflow-x-auto rounded border border-gray-200">
               <table className="min-w-full text-sm">
                 <thead className="bg-gray-50 text-gray-700">
                   <tr>
-                    <th className="px-3 py-2 text-left">Performa No</th>
-                    <th className="px-3 py-2 text-left">Inquiry No</th>
-                    <th className="px-3 py-2 text-left">Company</th>
-                    <th className="px-3 py-2 text-left">Action</th>
+                    <th className="px-2 py-2 text-left">Product</th>
+                    <th className="px-2 py-2 text-left">Qty</th>
+                    <th className="px-2 py-2 text-left">Price</th>
+                    <th className="px-2 py-2 text-left">Disc %</th>
+                    <th className="px-2 py-2 text-left">Disc Amt</th>
+                    <th className="px-2 py-2 text-left">GST %</th>
+                    <th className="px-2 py-2 text-left">Line Total</th>
+                    <th className="px-2 py-2 text-left">Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {performas.length === 0 ? (
-                    <tr>
-                      <td className="px-3 py-3" colSpan={4}>No performas available.</td>
-                    </tr>
-                  ) : (
-                    performas.map((performa) => (
-                      <tr key={performa.id} className="border-t">
-                        <td className="px-3 py-2 font-medium">{performa.performa_number}</td>
-                        <td className="px-3 py-2">{performa.inquiry_number}</td>
-                        <td className="px-3 py-2">{performa.company_name || "-"}</td>
-                        <td className="px-3 py-2">
-                          <Button size="sm" onClick={() => createFromPerforma(performa.id)}>
-                            Create Work Order
+                  {items.map((item, index) => {
+                    const qty = Math.max(1, Number(item.quantity) || 1)
+                    const price = Number(item.price) || 0
+                    const base = qty * price
+                    const discPercent = Number(item.discount_percent) || 0
+                    const discAmount = discPercent > 0 ? (base * discPercent) / 100 : Number(item.discount_amount) || 0
+                    const taxable = Math.max(0, base - Math.min(base, discAmount))
+                    const gstPercent = Number(item.gst_percent) || 0
+                    const total = taxable + (applyGst ? (taxable * gstPercent) / 100 : 0)
+
+                    return (
+                      <tr key={index} className="border-t">
+                        <td className="px-2 py-2 min-w-[280px]">
+                          <select
+                            className="w-full border border-gray-300 rounded-md h-9 px-2"
+                            value={item.product_key}
+                            onChange={(e) => onSelectProduct(index, e.target.value)}
+                          >
+                            <option value="">Select product</option>
+                            {products.map((product) => (
+                              <option key={product.key} value={product.key}>{product.label}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-2 py-2"><Input value={item.quantity} onChange={(e) => updateItem(index, { quantity: e.target.value })} /></td>
+                        <td className="px-2 py-2"><Input value={item.price} onChange={(e) => updateItem(index, { price: e.target.value })} /></td>
+                        <td className="px-2 py-2"><Input value={item.discount_percent} onChange={(e) => updateItem(index, { discount_percent: e.target.value })} /></td>
+                        <td className="px-2 py-2"><Input value={item.discount_amount} onChange={(e) => updateItem(index, { discount_amount: e.target.value })} /></td>
+                        <td className="px-2 py-2"><Input value={item.gst_percent} onChange={(e) => updateItem(index, { gst_percent: e.target.value })} /></td>
+                        <td className="px-2 py-2 font-medium">{round2(total).toFixed(2)}</td>
+                        <td className="px-2 py-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setItems((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev))}
+                          >
+                            Remove
                           </Button>
                         </td>
                       </tr>
-                    ))
-                  )}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
           </div>
+
+          {/* GST & Extra Charges */}
+          <div className="rounded border border-gray-200 p-4 space-y-3">
+            <h3 className="font-medium text-gray-800">GST & Extra Charges</h3>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="applyGst" checked={applyGst} onChange={(e) => setApplyGst(e.target.checked)} className="h-4 w-4" />
+                <Label htmlFor="applyGst" className="mb-0">Apply GST</Label>
+              </div>
+              <div>
+                <Label>Extra Charge GST %</Label>
+                <Input value={extraChargeGstPercent} onChange={(e) => setExtraChargeGstPercent(e.target.value)} />
+              </div>
+              <div>
+                <Label>Extra Charge 1</Label>
+                <Input value={extraCharge1} onChange={(e) => setExtraCharge1(e.target.value)} />
+              </div>
+              <div>
+                <Label>Extra Charge 2</Label>
+                <Input value={extraCharge2} onChange={(e) => setExtraCharge2(e.target.value)} />
+              </div>
+            </div>
+          </div>
+
+          {/* Advance Payment */}
+          <div className="rounded border border-gray-200 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="advanceDisplay" checked={advanceDisplay} onChange={(e) => setAdvanceDisplay(e.target.checked)} className="h-4 w-4" />
+              <h3 className="font-medium text-gray-800"><label htmlFor="advanceDisplay">Advance Payment</label></h3>
+            </div>
+            {advanceDisplay && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label>Advance Date</Label>
+                  <Input type="date" value={advanceDate} onChange={(e) => setAdvanceDate(e.target.value)} />
+                </div>
+                <div>
+                  <Label>Description</Label>
+                  <Input value={advanceDescription} onChange={(e) => setAdvanceDescription(e.target.value)} />
+                </div>
+                <div>
+                  <Label>Amount</Label>
+                  <Input value={advanceAmount} onChange={(e) => setAdvanceAmount(e.target.value)} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Remarks */}
+          <div>
+            <Label>Remarks</Label>
+            <Textarea rows={3} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+          </div>
+
+          {/* Totals */}
+          <div className="rounded border border-gray-200 bg-gray-50 p-4 grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
+            <div><span className="font-medium">Subtotal:</span> {summary.subtotal.toFixed(2)}</div>
+            <div><span className="font-medium">Discount:</span> {summary.totalDiscount.toFixed(2)}</div>
+            <div><span className="font-medium">GST:</span> {summary.totalGst.toFixed(2)}</div>
+            <div><span className="font-medium">Total:</span> {summary.totalAmount.toFixed(2)}</div>
+          </div>
+
+          <div className="flex justify-end">
+            <Button type="submit">{editingId ? "Update Work Order" : "Save Work Order"}</Button>
+          </div>
+        </form>
         )}
 
         {!showForm && (
@@ -262,12 +789,12 @@ return (
               <tr>
                 <th className="px-3 py-2 text-left">WO No</th>
                 <th className="px-3 py-2 text-left">Date</th>
-                <th className="px-3 py-2 text-left">Performa</th>
                 <th className="px-3 py-2 text-left">Inquiry</th>
                 <th className="px-3 py-2 text-left">Company</th>
                 <th className="px-3 py-2 text-left">Total</th>
                 <th className="px-3 py-2 text-left">Status</th>
-                <th className="px-3 py-2 text-left">Sent To Production</th>
+                <th className="px-3 py-2 text-left">Production</th>
+                <th className="px-3 py-2 text-left">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -276,16 +803,28 @@ return (
                   <td className="px-3 py-3" colSpan={8}>No work orders found.</td>
                 </tr>
               ) : (
-                filteredWorkOrders.map((workOrder) => (
-                  <tr key={workOrder.id} className="border-t">
-                    <td className="px-3 py-2 font-medium">{workOrder.work_order_number}</td>
-                    <td className="px-3 py-2">{workOrder.created_at ? new Date(workOrder.created_at).toLocaleDateString() : "-"}</td>
-                    <td className="px-3 py-2">{workOrder.performa_number || "-"}</td>
-                    <td className="px-3 py-2">{workOrder.inquiry_number || "-"}</td>
-                    <td className="px-3 py-2">{workOrder.company_name || "-"}</td>
-                    <td className="px-3 py-2">{Number(workOrder.total_amount || 0).toFixed(2)}</td>
-                    <td className="px-3 py-2">{workOrder.status || "generated"}</td>
-                    <td className="px-3 py-2">{workOrder.sent_to_production_at ? "Yes" : "No"}</td>
+                filteredWorkOrders.map((wo) => (
+                  <tr key={wo.id} className="border-t">
+                    <td className="px-3 py-2 font-medium">{wo.work_order_number}</td>
+                    <td className="px-3 py-2">{wo.created_at ? new Date(wo.created_at).toLocaleDateString() : "-"}</td>
+                    <td className="px-3 py-2">{wo.inquiry_number || "-"}</td>
+                    <td className="px-3 py-2">{wo.company_name || "-"}</td>
+                    <td className="px-3 py-2">{round2(Number(wo.total_amount || 0)).toFixed(2)}</td>
+                    <td className="px-3 py-2">{wo.status || "generated"}</td>
+                    <td className="px-3 py-2">{wo.sent_to_production_at ? "Yes" : "No"}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-1">
+                        <Button size="icon" variant="ghost" className="h-8 w-8" title="Print" onClick={() => printWorkOrder(wo.id)}>
+                          <Printer className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8" title="Edit" onClick={() => editWorkOrder(wo.id)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-red-600 hover:text-red-700" title="Delete" onClick={() => deleteWorkOrder(wo.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}

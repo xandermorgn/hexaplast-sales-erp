@@ -68,6 +68,12 @@ function calculateItems(items) {
     return {
       product_type,
       product_id,
+      category_name: rawItem?.category_name || null,
+      sub_category: rawItem?.sub_category || null,
+      product_name: rawItem?.product_name || null,
+      model_number: rawItem?.model_number || null,
+      hsn_sac_code: rawItem?.hsn_sac_code || null,
+      unit: rawItem?.unit || null,
       quantity,
       price,
       discount_percent,
@@ -170,13 +176,20 @@ function insertPerforma({ inquiry_id, quotation_id = null, created_by, status, n
   for (const item of calculated.items) {
     run(
       `INSERT INTO performa_items (
-        performa_id, product_type, product_id, quantity, price,
-        discount_percent, discount_amount, gst_percent, total
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        performa_id, product_type, product_id,
+        category_name, sub_category, product_name, model_number, hsn_sac_code, unit,
+        quantity, price, discount_percent, discount_amount, gst_percent, total
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         performaId,
         item.product_type,
         item.product_id,
+        item.category_name || null,
+        item.sub_category || null,
+        item.product_name || null,
+        item.model_number || null,
+        item.hsn_sac_code || null,
+        item.unit || null,
         item.quantity,
         item.price,
         item.discount_percent,
@@ -442,13 +455,20 @@ export function updatePerforma(req, res) {
       for (const item of calculated.items) {
         run(
           `INSERT INTO performa_items (
-            performa_id, product_type, product_id, quantity, price,
-            discount_percent, discount_amount, gst_percent, total
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            performa_id, product_type, product_id,
+            category_name, sub_category, product_name, model_number, hsn_sac_code, unit,
+            quantity, price, discount_percent, discount_amount, gst_percent, total
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             id,
             item.product_type,
             item.product_id,
+            item.category_name || null,
+            item.sub_category || null,
+            item.product_name || null,
+            item.model_number || null,
+            item.hsn_sac_code || null,
+            item.unit || null,
             item.quantity,
             item.price,
             item.discount_percent,

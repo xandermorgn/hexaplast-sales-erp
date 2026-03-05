@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
+import { Printer, Pencil, Trash2, FileOutput } from "lucide-react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,26 +13,49 @@ import { useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
 import { apiUrl } from "@/lib/api"
 
-type QuotationOption = {
+type Inquiry = {
   id: number
-  quotation_number: string
   inquiry_number: string
   company_name: string | null
+  authorized_person: string | null
+  authorized_phone: string | null
+  email: string | null
+  address: string | null
 }
 
-type Item = {
+type ProductOption = {
+  key: string
   product_type: "machine" | "spare"
   product_id: number
-  product_name?: string | null
-  quantity: number
-  price: number
-  discount_percent: number
-  discount_amount: number
+  label: string
+  sales_price: number
   gst_percent: number
-  total: number
+  category_name: string
+  sub_category: string
+  product_name: string
+  model_number: string
+  hsn_sac_code: string
+  unit: string
 }
 
-type Performa = {
+type PerformaItemForm = {
+  product_key: string
+  product_type: "machine" | "spare" | ""
+  product_id: number | null
+  category_name: string
+  sub_category: string
+  product_name: string
+  model_number: string
+  hsn_sac_code: string
+  unit: string
+  quantity: string
+  price: string
+  discount_percent: string
+  discount_amount: string
+  gst_percent: string
+}
+
+type PerformaRow = {
   id: number
   performa_number: string
   created_at?: string | null
@@ -40,16 +64,49 @@ type Performa = {
   inquiry_id: number
   inquiry_number: string
   company_name: string | null
-  attention: string | null
+  subtotal: number
+  total_discount: number
+  total_gst: number
+  total_amount: number
+  status: string | null
+}
+
+type PerformaDetail = {
+  id: number
+  performa_number: string
+  quotation_id: number | null
+  inquiry_id: number
+  inquiry_number: string
+  company_name: string | null
+  authorized_person: string | null
+  authorized_phone: string | null
+  email: string | null
+  address: string | null
   subtotal: number
   total_discount: number
   total_gst: number
   total_amount: number
   status: string | null
   terms_conditions: string | null
+  attention: string | null
   declaration: string | null
   special_notes: string | null
-  items: Item[]
+  items: {
+    product_type: "machine" | "spare"
+    product_id: number
+    category_name?: string | null
+    sub_category?: string | null
+    product_name?: string | null
+    model_number?: string | null
+    hsn_sac_code?: string | null
+    unit?: string | null
+    quantity: number
+    price: number
+    discount_percent: number
+    discount_amount: number
+    gst_percent: number
+    total: number
+  }[]
 }
 
 type DocumentDefaults = {
@@ -58,6 +115,25 @@ type DocumentDefaults = {
   declaration: string
   special_notes: string
 }
+
+const emptyItem = (): PerformaItemForm => ({
+  product_key: "",
+  product_type: "",
+  product_id: null,
+  category_name: "",
+  sub_category: "",
+  product_name: "",
+  model_number: "",
+  hsn_sac_code: "",
+  unit: "",
+  quantity: "1",
+  price: "0",
+  discount_percent: "0",
+  discount_amount: "0",
+  gst_percent: "0",
+})
+
+const round2 = (value: number) => Math.round(value * 100) / 100
 
 export default function PerformasPage() {
   const router = useRouter()
@@ -91,12 +167,15 @@ export default function PerformasPage() {
     setActiveSection("performas")
   }
 
-  const [quotations, setQuotations] = useState<QuotationOption[]>([])
-  const [performas, setPerformas] = useState<Performa[]>([])
+  const [inquiries, setInquiries] = useState<Inquiry[]>([])
+  const [products, setProducts] = useState<ProductOption[]>([])
+  const [performas, setPerformas] = useState<PerformaRow[]>([])
   const [showForm, setShowForm] = useState(false)
   const [filters, setFilters] = useState({ from_date: "", to_date: "" })
-  const [selectedQuotationId, setSelectedQuotationId] = useState("")
+
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [inquiryId, setInquiryId] = useState("")
+  const [items, setItems] = useState<PerformaItemForm[]>([emptyItem()])
 
   const [termsConditions, setTermsConditions] = useState("")
   const [attention, setAttention] = useState("")
@@ -109,13 +188,48 @@ export default function PerformasPage() {
     special_notes: "",
   })
 
-  const [items, setItems] = useState<Item[]>([])
-  const [totals, setTotals] = useState({ subtotal: 0, total_discount: 0, total_gst: 0, total_amount: 0 })
-
-  const selectedQuotation = useMemo(
-    () => quotations.find((q) => String(q.id) === selectedQuotationId) || null,
-    [quotations, selectedQuotationId],
+  const selectedInquiry = useMemo(
+    () => inquiries.find((inq) => String(inq.id) === inquiryId) || null,
+    [inquiries, inquiryId],
   )
+
+  const summary = useMemo(() => {
+    let subtotal = 0
+    let totalDiscount = 0
+    let totalGst = 0
+
+    for (const item of items) {
+      const qty = Math.max(1, Number(item.quantity) || 1)
+      const price = Number(item.price) || 0
+      const base = qty * price
+
+      let discPercent = Number(item.discount_percent) || 0
+      let discAmount = Number(item.discount_amount) || 0
+
+      if (discPercent > 0) {
+        discAmount = (base * discPercent) / 100
+      } else if (discAmount > 0 && base > 0) {
+        discPercent = (discAmount / base) * 100
+      }
+
+      if (discAmount > base) discAmount = base
+
+      const taxable = base - discAmount
+      const gstPercent = Number(item.gst_percent) || 0
+      const gstAmount = (taxable * gstPercent) / 100
+
+      subtotal += base
+      totalDiscount += discAmount
+      totalGst += gstAmount
+    }
+
+    return {
+      subtotal: round2(subtotal),
+      totalDiscount: round2(totalDiscount),
+      totalGst: round2(totalGst),
+      totalAmount: round2(subtotal - totalDiscount + totalGst),
+    }
+  }, [items])
 
   const filteredPerformas = useMemo(() => {
     return performas.filter((performa) => {
@@ -138,11 +252,57 @@ export default function PerformasPage() {
     })
   }, [performas, filters.from_date, filters.to_date])
 
-  async function fetchQuotations() {
-    const response = await fetch(apiUrl("/api/quotations"), { credentials: "include" })
-    if (!response.ok) throw new Error("Failed to fetch quotations")
+  async function fetchInquiries() {
+    const response = await fetch(apiUrl("/api/inquiries"), { credentials: "include" })
+    if (!response.ok) throw new Error("Failed to fetch inquiries")
     const data = await response.json()
-    setQuotations(data.quotations || [])
+    setInquiries(data.inquiries || [])
+  }
+
+  async function fetchProducts() {
+    const [machinesRes, sparesRes] = await Promise.all([
+      fetch(apiUrl("/api/products/machines"), { credentials: "include" }),
+      fetch(apiUrl("/api/products/spares"), { credentials: "include" }),
+    ])
+
+    if (!machinesRes.ok || !sparesRes.ok) {
+      throw new Error("Failed to fetch products")
+    }
+
+    const machinesData = await machinesRes.json()
+    const sparesData = await sparesRes.json()
+
+    const machineOptions: ProductOption[] = (machinesData.products || []).map((product: any) => ({
+      key: `machine-${product.id}`,
+      product_type: "machine" as const,
+      product_id: product.id,
+      label: `[Machine] ${product.product_name || "-"} (${product.product_code || "-"})`,
+      sales_price: Number(product.sales_price) || 0,
+      gst_percent: Number(product.gst_percent) || 0,
+      category_name: product.category || "",
+      sub_category: product.sub_category || "",
+      product_name: product.product_name || "",
+      model_number: product.model_number || "",
+      hsn_sac_code: product.hsn_sac_code || "",
+      unit: product.unit || "Nos",
+    }))
+
+    const spareOptions: ProductOption[] = (sparesData.products || []).map((product: any) => ({
+      key: `spare-${product.id}`,
+      product_type: "spare" as const,
+      product_id: product.id,
+      label: `[Spare] ${product.product_name || "-"} (${product.product_code || "-"})`,
+      sales_price: Number(product.sales_price) || 0,
+      gst_percent: Number(product.gst_percent) || 0,
+      category_name: product.category || "",
+      sub_category: product.sub_category || "",
+      product_name: product.product_name || "",
+      model_number: product.model_number || "",
+      hsn_sac_code: product.hsn_sac_code || "",
+      unit: product.unit || "Nos",
+    }))
+
+    setProducts([...machineOptions, ...spareOptions])
   }
 
   async function fetchPerformas() {
@@ -176,7 +336,7 @@ export default function PerformasPage() {
 
   async function loadAll() {
     try {
-      await Promise.all([fetchQuotations(), fetchPerformas(), fetchDocumentDefaults(true)])
+      await Promise.all([fetchInquiries(), fetchProducts(), fetchPerformas(), fetchDocumentDefaults(true)])
     } catch {
       toast({ title: "Error", description: "Failed to load performa module data", variant: "destructive" })
     }
@@ -187,114 +347,199 @@ export default function PerformasPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function createFromQuotation() {
-    if (!selectedQuotationId) {
-      toast({ title: "Validation", description: "Select quotation first", variant: "destructive" })
+  function resetForm() {
+    setEditingId(null)
+    setInquiryId("")
+    setItems([emptyItem()])
+    setTermsConditions(defaultSettings.terms_conditions)
+    setAttention(defaultSettings.attention)
+    setDeclaration(defaultSettings.declaration)
+    setSpecialNotes(defaultSettings.special_notes)
+  }
+
+  function openCreateForm() {
+    resetForm()
+    setShowForm(true)
+  }
+
+  function updateItem(index: number, partial: Partial<PerformaItemForm>) {
+    setItems((prev) => prev.map((item, i) => (i === index ? { ...item, ...partial } : item)))
+  }
+
+  function onSelectProduct(index: number, productKey: string) {
+    const product = products.find((entry) => entry.key === productKey)
+    if (!product) {
+      updateItem(index, { product_key: "", product_type: "", product_id: null })
+      return
+    }
+
+    updateItem(index, {
+      product_key: product.key,
+      product_type: product.product_type,
+      product_id: product.product_id,
+      price: String(product.sales_price),
+      gst_percent: String(product.gst_percent),
+      category_name: product.category_name,
+      sub_category: product.sub_category,
+      product_name: product.product_name,
+      model_number: product.model_number,
+      hsn_sac_code: product.hsn_sac_code,
+      unit: product.unit,
+    })
+  }
+
+  async function submitPerforma(event: FormEvent) {
+    event.preventDefault()
+
+    if (!inquiryId) {
+      toast({ title: "Validation", description: "Please choose inquiry", variant: "destructive" })
+      return
+    }
+
+    const sanitizedItems = items
+      .filter((item) => item.product_type && item.product_id)
+      .map((item) => ({
+        product_type: item.product_type,
+        product_id: item.product_id,
+        category_name: item.category_name,
+        sub_category: item.sub_category,
+        product_name: item.product_name,
+        model_number: item.model_number,
+        hsn_sac_code: item.hsn_sac_code,
+        unit: item.unit,
+        quantity: Number(item.quantity) || 1,
+        price: Number(item.price) || 0,
+        discount_percent: Number(item.discount_percent) || 0,
+        discount_amount: Number(item.discount_amount) || 0,
+        gst_percent: Number(item.gst_percent) || 0,
+      }))
+
+    if (sanitizedItems.length === 0) {
+      toast({ title: "Validation", description: "Please add at least one product", variant: "destructive" })
       return
     }
 
     try {
-      const response = await fetch(apiUrl(`/api/performas/from-quotation/${selectedQuotationId}`), {
-        method: "POST",
+      const payload = {
+        inquiry_id: Number(inquiryId),
+        terms_conditions: termsConditions,
+        attention,
+        declaration,
+        special_notes: specialNotes,
+        items: sanitizedItems,
+      }
+
+      const isUpdate = Boolean(editingId)
+      const endpoint = isUpdate ? `/api/performas/${editingId}` : "/api/performas"
+      const response = await fetch(apiUrl(endpoint), {
+        method: isUpdate ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          terms_conditions: termsConditions,
-          attention,
-          declaration,
-          special_notes: specialNotes,
-        }),
+        body: JSON.stringify(payload),
       })
 
       const data = await response.json()
-      if (!response.ok) throw new Error(data?.message || "Failed to create performa")
+      if (!response.ok) throw new Error(data?.message || "Failed to save performa")
 
-      const performa = data.performa as Performa
-      setEditingId(performa.id)
-      setItems(performa.items || [])
-      setTotals(data.totals || {
-        subtotal: performa.subtotal || 0,
-        total_discount: performa.total_discount || 0,
-        total_gst: performa.total_gst || 0,
-        total_amount: performa.total_amount || 0,
-      })
-
-      toast({ title: "Success", description: "Performa created from quotation" })
+      toast({ title: "Success", description: isUpdate ? "Performa updated" : "Performa saved" })
       await fetchPerformas()
       setShowForm(false)
     } catch (error) {
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create performa",
+        description: error instanceof Error ? error.message : "Failed to save performa",
         variant: "destructive",
       })
     }
   }
 
-  async function loadPerforma(id: number) {
+  async function editPerforma(id: number) {
     try {
       const response = await fetch(apiUrl(`/api/performas/${id}`), { credentials: "include" })
       if (!response.ok) throw new Error("Failed to fetch performa")
+
       const data = await response.json()
-      const performa = data.performa as Performa
+      const performa = data.performa as PerformaDetail
 
       setEditingId(performa.id)
-      setSelectedQuotationId(performa.quotation_id ? String(performa.quotation_id) : "")
+      setInquiryId(String(performa.inquiry_id))
       setTermsConditions(performa.terms_conditions || "")
       setAttention(performa.attention || "")
       setDeclaration(performa.declaration || "")
       setSpecialNotes(performa.special_notes || "")
-      setItems(performa.items || [])
       setShowForm(true)
-      setTotals({
-        subtotal: Number(performa.subtotal || 0),
-        total_discount: Number(performa.total_discount || 0),
-        total_gst: Number(performa.total_gst || 0),
-        total_amount: Number(performa.total_amount || 0),
-      })
+
+      setItems(
+        (performa.items || []).map((item) => ({
+          product_key: `${item.product_type}-${item.product_id}`,
+          product_type: item.product_type,
+          product_id: item.product_id,
+          category_name: item.category_name || "",
+          sub_category: item.sub_category || "",
+          product_name: item.product_name || "",
+          model_number: item.model_number || "",
+          hsn_sac_code: item.hsn_sac_code || "",
+          unit: item.unit || "",
+          quantity: String(item.quantity),
+          price: String(item.price),
+          discount_percent: String(item.discount_percent),
+          discount_amount: String(item.discount_amount),
+          gst_percent: String(item.gst_percent),
+        })),
+      )
     } catch {
       toast({ title: "Error", description: "Failed to load performa", variant: "destructive" })
     }
   }
 
-  async function updatePerforma(event: FormEvent) {
-    event.preventDefault()
-
-    if (!editingId) {
-      toast({ title: "Validation", description: "Create or open a performa first", variant: "destructive" })
-      return
-    }
+  async function deletePerforma(id: number) {
+    if (!confirm("Are you sure you want to delete this performa?")) return
 
     try {
-      const response = await fetch(apiUrl(`/api/performas/${editingId}`), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
+      const response = await fetch(apiUrl(`/api/performas/${id}`), {
+        method: "DELETE",
         credentials: "include",
-        body: JSON.stringify({
-          terms_conditions: termsConditions,
-          attention,
-          declaration,
-          special_notes: specialNotes,
-        }),
       })
 
-      const data = await response.json()
-      if (!response.ok) throw new Error(data?.message || "Failed to update performa")
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data?.message || "Failed to delete performa")
+      }
 
-      const performa = data.performa as Performa
-      setItems(performa.items || items)
-      setTotals(data.totals || totals)
-
-      toast({ title: "Success", description: "Performa updated" })
+      toast({ title: "Success", description: "Performa deleted" })
       await fetchPerformas()
-      setShowForm(false)
     } catch (error) {
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to update performa",
+        description: error instanceof Error ? error.message : "Failed to delete performa",
         variant: "destructive",
       })
     }
+  }
+
+  async function createWorkOrderFromPerforma(performaId: number) {
+    try {
+      const response = await fetch(apiUrl(`/api/work-orders/from-performa/${performaId}`), {
+        method: "POST",
+        credentials: "include",
+      })
+
+      const data = await response.json()
+      if (!response.ok) throw new Error(data?.message || "Failed to create work order")
+
+      toast({ title: "Success", description: "Work order created from performa" })
+      router.push("/dashboard/work-orders")
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to create work order",
+        variant: "destructive",
+      })
+    }
+  }
+
+  function printPerforma(id: number) {
+    window.open(`/dashboard/performas/print/${id}`, "_blank")
   }
 
   if (isLoading) {
@@ -312,21 +557,19 @@ export default function PerformasPage() {
     )
   }
 
-return (
-  <DashboardLayout
-    title="Sales"
-    menuItems={menuItems}
-    activeSection={activeSection}
-    onSectionChange={handleSectionChange}
-    loginId={user?.loginId || ""}
-    onLogout={logout}
-  >
+  return (
+    <DashboardLayout
+      title="Sales"
+      menuItems={menuItems}
+      activeSection={activeSection}
+      onSectionChange={handleSectionChange}
+      loginId={user?.loginId || ""}
+      onLogout={logout}
+    >
       <div className="space-y-5">
         <div>
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-800">Performa Invoice</h1>
-            <p className="text-sm text-gray-500">Structure mirrors quotation and supports create-from-quotation.</p>
-          </div>
+          <h1 className="text-2xl font-semibold text-gray-800">Performa Invoice</h1>
+          <p className="text-sm text-gray-500">Create and manage performa invoices from customer inquiries.</p>
         </div>
 
         <div className="flex items-center justify-between gap-4">
@@ -353,115 +596,136 @@ return (
                 Back to List
               </Button>
             ) : null}
-            <Button
-              className="h-10 px-6 text-base"
-              onClick={() => {
-                setEditingId(null)
-                setSelectedQuotationId("")
-                setTermsConditions(defaultSettings.terms_conditions)
-                setAttention(defaultSettings.attention)
-                setDeclaration(defaultSettings.declaration)
-                setSpecialNotes(defaultSettings.special_notes)
-                setItems([])
-                setTotals({ subtotal: 0, total_discount: 0, total_gst: 0, total_amount: 0 })
-                setShowForm(true)
-              }}
-            >
+            <Button className="h-10 px-6 text-base" onClick={openCreateForm}>
               + New
             </Button>
           </div>
         </div>
 
         {showForm && (
-        <form onSubmit={updatePerforma} className="rounded-lg border border-gray-200 bg-white p-5 space-y-4">
+        <form onSubmit={submitPerforma} className="rounded-lg border border-gray-200 bg-white p-5 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label>Quotation</Label>
+              <Label>Customer Inquiry</Label>
               <select
                 className="w-full border border-gray-300 rounded-md h-10 px-3"
-                value={selectedQuotationId}
-                onChange={(e) => setSelectedQuotationId(e.target.value)}
+                value={inquiryId}
+                onChange={(e) => setInquiryId(e.target.value)}
+                required
               >
-                <option value="">Select quotation</option>
-                {quotations.map((quotation) => (
-                  <option key={quotation.id} value={quotation.id}>
-                    {quotation.quotation_number} - {quotation.company_name || "-"} ({quotation.inquiry_number})
+                <option value="">Select inquiry</option>
+                {inquiries.map((inquiry) => (
+                  <option key={inquiry.id} value={inquiry.id}>
+                    {(inquiry.company_name || "-") + " - " + inquiry.inquiry_number}
                   </option>
                 ))}
               </select>
-              {selectedQuotation && (
-                <p className="text-xs text-gray-500 mt-1">Selected: {selectedQuotation.company_name || "-"}</p>
-              )}
+            </div>
+          </div>
+
+          <div className="rounded border border-gray-100 p-3 bg-gray-50 text-sm grid grid-cols-1 md:grid-cols-2 gap-2">
+            <p><span className="font-medium">Contact:</span> {selectedInquiry?.authorized_person || "-"}</p>
+            <p><span className="font-medium">Phone:</span> {selectedInquiry?.authorized_phone || "-"}</p>
+            <p><span className="font-medium">Email:</span> {selectedInquiry?.email || "-"}</p>
+            <p><span className="font-medium">Address:</span> {selectedInquiry?.address || "-"}</p>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="font-medium text-gray-800">Performa Items</h3>
+              <Button type="button" variant="outline" onClick={() => setItems((prev) => [...prev, emptyItem()])}>Add Item</Button>
+            </div>
+
+            <div className="overflow-x-auto rounded border border-gray-200">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 text-gray-700">
+                  <tr>
+                    <th className="px-2 py-2 text-left">Product</th>
+                    <th className="px-2 py-2 text-left">Qty</th>
+                    <th className="px-2 py-2 text-left">Price</th>
+                    <th className="px-2 py-2 text-left">Disc %</th>
+                    <th className="px-2 py-2 text-left">Disc Amt</th>
+                    <th className="px-2 py-2 text-left">GST %</th>
+                    <th className="px-2 py-2 text-left">Line Total</th>
+                    <th className="px-2 py-2 text-left">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item, index) => {
+                    const qty = Math.max(1, Number(item.quantity) || 1)
+                    const price = Number(item.price) || 0
+                    const base = qty * price
+                    const discPercent = Number(item.discount_percent) || 0
+                    const discAmount = discPercent > 0 ? (base * discPercent) / 100 : Number(item.discount_amount) || 0
+                    const taxable = Math.max(0, base - Math.min(base, discAmount))
+                    const gstPercent = Number(item.gst_percent) || 0
+                    const total = taxable + (taxable * gstPercent) / 100
+
+                    return (
+                      <tr key={index} className="border-t">
+                        <td className="px-2 py-2 min-w-[280px]">
+                          <select
+                            className="w-full border border-gray-300 rounded-md h-9 px-2"
+                            value={item.product_key}
+                            onChange={(e) => onSelectProduct(index, e.target.value)}
+                          >
+                            <option value="">Select product</option>
+                            {products.map((product) => (
+                              <option key={product.key} value={product.key}>{product.label}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-2 py-2"><Input value={item.quantity} onChange={(e) => updateItem(index, { quantity: e.target.value })} /></td>
+                        <td className="px-2 py-2"><Input value={item.price} onChange={(e) => updateItem(index, { price: e.target.value })} /></td>
+                        <td className="px-2 py-2"><Input value={item.discount_percent} onChange={(e) => updateItem(index, { discount_percent: e.target.value })} /></td>
+                        <td className="px-2 py-2"><Input value={item.discount_amount} onChange={(e) => updateItem(index, { discount_amount: e.target.value })} /></td>
+                        <td className="px-2 py-2"><Input value={item.gst_percent} onChange={(e) => updateItem(index, { gst_percent: e.target.value })} /></td>
+                        <td className="px-2 py-2 font-medium">{round2(total).toFixed(2)}</td>
+                        <td className="px-2 py-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setItems((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev))}
+                          >
+                            Remove
+                          </Button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label>Terms & Conditions</Label>
-              <Textarea value={termsConditions} onChange={(e) => setTermsConditions(e.target.value)} rows={3} />
+              <Textarea rows={3} value={termsConditions} onChange={(e) => setTermsConditions(e.target.value)} />
             </div>
             <div>
               <Label>Attention</Label>
-              <Textarea value={attention} onChange={(e) => setAttention(e.target.value)} rows={3} />
+              <Textarea rows={3} value={attention} onChange={(e) => setAttention(e.target.value)} />
             </div>
             <div>
               <Label>Declaration</Label>
-              <Textarea value={declaration} onChange={(e) => setDeclaration(e.target.value)} rows={3} />
+              <Textarea rows={3} value={declaration} onChange={(e) => setDeclaration(e.target.value)} />
             </div>
             <div>
               <Label>Special Notes</Label>
-              <Textarea value={specialNotes} onChange={(e) => setSpecialNotes(e.target.value)} rows={3} />
+              <Textarea rows={3} value={specialNotes} onChange={(e) => setSpecialNotes(e.target.value)} />
             </div>
           </div>
 
-          <div className="rounded border border-gray-200 bg-gray-50 p-4 text-sm grid grid-cols-1 md:grid-cols-4 gap-2">
-            <div><span className="font-medium">Subtotal:</span> {Number(totals.subtotal || 0).toFixed(2)}</div>
-            <div><span className="font-medium">Discount:</span> {Number(totals.total_discount || 0).toFixed(2)}</div>
-            <div><span className="font-medium">GST:</span> {Number(totals.total_gst || 0).toFixed(2)}</div>
-            <div><span className="font-medium">Total:</span> {Number(totals.total_amount || 0).toFixed(2)}</div>
-          </div>
-
-          <div className="rounded border border-gray-200 overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 text-gray-700">
-                <tr>
-                  <th className="px-3 py-2 text-left">Type</th>
-                  <th className="px-3 py-2 text-left">Product</th>
-                  <th className="px-3 py-2 text-left">Qty</th>
-                  <th className="px-3 py-2 text-left">Price</th>
-                  <th className="px-3 py-2 text-left">Disc</th>
-                  <th className="px-3 py-2 text-left">GST %</th>
-                  <th className="px-3 py-2 text-left">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.length === 0 ? (
-                  <tr>
-                    <td className="px-3 py-3" colSpan={7}>No items loaded.</td>
-                  </tr>
-                ) : (
-                  items.map((item, index) => (
-                    <tr key={index} className="border-t">
-                      <td className="px-3 py-2">{item.product_type}</td>
-                      <td className="px-3 py-2">{item.product_name || `#${item.product_id}`}</td>
-                      <td className="px-3 py-2">{item.quantity}</td>
-                      <td className="px-3 py-2">{item.price}</td>
-                      <td className="px-3 py-2">{item.discount_amount}</td>
-                      <td className="px-3 py-2">{item.gst_percent}</td>
-                      <td className="px-3 py-2">{item.total}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+          <div className="rounded border border-gray-200 bg-gray-50 p-4 grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
+            <div><span className="font-medium">Subtotal:</span> {summary.subtotal.toFixed(2)}</div>
+            <div><span className="font-medium">Discount:</span> {summary.totalDiscount.toFixed(2)}</div>
+            <div><span className="font-medium">GST:</span> {summary.totalGst.toFixed(2)}</div>
+            <div><span className="font-medium">Total:</span> {summary.totalAmount.toFixed(2)}</div>
           </div>
 
           <div className="flex justify-end">
-            {editingId ? (
-              <Button type="submit">Update Performa</Button>
-            ) : (
-              <Button type="button" onClick={createFromQuotation}>Save Performa</Button>
-            )}
+            <Button type="submit">{editingId ? "Update Performa" : "Save Performa"}</Button>
           </div>
         </form>
         )}
@@ -472,12 +736,12 @@ return (
             <thead className="bg-gray-50 text-gray-700">
               <tr>
                 <th className="px-3 py-2 text-left">Performa No</th>
-                <th className="px-3 py-2 text-left">Quotation</th>
+                <th className="px-3 py-2 text-left">Date</th>
                 <th className="px-3 py-2 text-left">Inquiry</th>
                 <th className="px-3 py-2 text-left">Company</th>
                 <th className="px-3 py-2 text-left">Total</th>
                 <th className="px-3 py-2 text-left">Status</th>
-                <th className="px-3 py-2 text-left">Action</th>
+                <th className="px-3 py-2 text-left">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -489,13 +753,26 @@ return (
                 filteredPerformas.map((performa) => (
                   <tr key={performa.id} className="border-t">
                     <td className="px-3 py-2 font-medium">{performa.performa_number}</td>
-                    <td className="px-3 py-2">{performa.quotation_number || "-"}</td>
+                    <td className="px-3 py-2">{performa.created_at ? new Date(performa.created_at).toLocaleDateString() : "-"}</td>
                     <td className="px-3 py-2">{performa.inquiry_number}</td>
                     <td className="px-3 py-2">{performa.company_name || "-"}</td>
-                    <td className="px-3 py-2">{Number(performa.total_amount || 0).toFixed(2)}</td>
+                    <td className="px-3 py-2">{round2(Number(performa.total_amount || 0)).toFixed(2)}</td>
                     <td className="px-3 py-2">{performa.status || "draft"}</td>
                     <td className="px-3 py-2">
-                      <Button size="sm" variant="outline" onClick={() => loadPerforma(performa.id)}>Edit</Button>
+                      <div className="flex items-center gap-1">
+                        <Button size="icon" variant="ghost" className="h-8 w-8" title="Print" onClick={() => printPerforma(performa.id)}>
+                          <Printer className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8" title="Edit" onClick={() => editPerforma(performa.id)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-red-600 hover:text-red-700" title="Delete" onClick={() => deletePerforma(performa.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-blue-600 hover:text-blue-700" title="Create Work Order" onClick={() => createWorkOrderFromPerforma(performa.id)}>
+                          <FileOutput className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))

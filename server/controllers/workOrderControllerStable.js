@@ -51,6 +51,12 @@ function calculateItems(items) {
     return {
       product_type: raw.product_type,
       product_id: toNullableInt(raw.product_id),
+      category_name: raw.category_name || null,
+      sub_category: raw.sub_category || null,
+      product_name: raw.product_name || null,
+      model_number: raw.model_number || null,
+      hsn_sac_code: raw.hsn_sac_code || null,
+      unit: raw.unit || null,
       quantity,
       price,
       discount_percent,
@@ -204,7 +210,7 @@ async function pushWorkOrderToProduction(workOrder) {
   return responseData;
 }
 
-function insertWorkOrder({ performa_id = null, inquiry_id, created_by, prepared_by, checked_by, approved_by, status, rawItems }) {
+function insertWorkOrder({ performa_id = null, quotation_id = null, inquiry_id, created_by, prepared_by, checked_by, approved_by, status, work_order_date, calibration_nabl, packing, delivery_date, remarks, apply_gst, extra_charge_gst_percent, extra_charge_1, extra_charge_2, advance_display, advance_date, advance_description, advance_amount, rawItems }) {
   const calculated = calculateItems(rawItems);
   const work_order_number = generateNextWorkOrderNumber();
 
@@ -212,6 +218,7 @@ function insertWorkOrder({ performa_id = null, inquiry_id, created_by, prepared_
     `INSERT INTO work_orders (
       work_order_number,
       performa_id,
+      quotation_id,
       inquiry_id,
       created_by,
       prepared_by,
@@ -222,11 +229,25 @@ function insertWorkOrder({ performa_id = null, inquiry_id, created_by, prepared_
       total_gst,
       total_amount,
       status,
+      work_order_date,
+      calibration_nabl,
+      packing,
+      delivery_date,
+      remarks,
+      apply_gst,
+      extra_charge_gst_percent,
+      extra_charge_1,
+      extra_charge_2,
+      advance_display,
+      advance_date,
+      advance_description,
+      advance_amount,
       is_deleted
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
     [
       work_order_number,
       performa_id,
+      quotation_id,
       inquiry_id,
       created_by,
       prepared_by,
@@ -237,6 +258,19 @@ function insertWorkOrder({ performa_id = null, inquiry_id, created_by, prepared_
       calculated.total_gst,
       calculated.total_amount,
       status,
+      work_order_date || null,
+      calibration_nabl || null,
+      packing || null,
+      delivery_date || null,
+      remarks || null,
+      apply_gst !== undefined ? (apply_gst ? 1 : 0) : 1,
+      toNumber(extra_charge_gst_percent, 0),
+      toNumber(extra_charge_1, 0),
+      toNumber(extra_charge_2, 0),
+      advance_display ? 1 : 0,
+      advance_date || null,
+      advance_description || null,
+      toNumber(advance_amount, 0),
     ],
   );
 
@@ -248,17 +282,29 @@ function insertWorkOrder({ performa_id = null, inquiry_id, created_by, prepared_
         work_order_id,
         product_type,
         product_id,
+        category_name,
+        sub_category,
+        product_name,
+        model_number,
+        hsn_sac_code,
+        unit,
         quantity,
         price,
         discount_percent,
         discount_amount,
         gst_percent,
         total
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         workOrderId,
         item.product_type,
         item.product_id,
+        item.category_name || null,
+        item.sub_category || null,
+        item.product_name || null,
+        item.model_number || null,
+        item.hsn_sac_code || null,
+        item.unit || null,
         item.quantity,
         item.price,
         item.discount_percent,
@@ -310,12 +356,26 @@ export function createWorkOrder(req, res) {
 
     const { workOrderId, work_order_number, totals } = insertWorkOrder({
       performa_id: toNullableInt(req.body?.performa_id),
+      quotation_id: toNullableInt(req.body?.quotation_id),
       inquiry_id,
       created_by: req.user?.id || null,
       prepared_by: toNullableInt(req.body?.prepared_by),
       checked_by: toNullableInt(req.body?.checked_by),
       approved_by: toNullableInt(req.body?.approved_by),
       status,
+      work_order_date: req.body?.work_order_date,
+      calibration_nabl: req.body?.calibration_nabl,
+      packing: req.body?.packing,
+      delivery_date: req.body?.delivery_date,
+      remarks: req.body?.remarks,
+      apply_gst: req.body?.apply_gst,
+      extra_charge_gst_percent: req.body?.extra_charge_gst_percent,
+      extra_charge_1: req.body?.extra_charge_1,
+      extra_charge_2: req.body?.extra_charge_2,
+      advance_display: req.body?.advance_display,
+      advance_date: req.body?.advance_date,
+      advance_description: req.body?.advance_description,
+      advance_amount: req.body?.advance_amount,
       rawItems: items,
     });
 
@@ -542,13 +602,20 @@ export function updateWorkOrder(req, res) {
       for (const item of calculated.items) {
         run(
           `INSERT INTO work_order_items (
-            work_order_id, product_type, product_id, quantity, price,
-            discount_percent, discount_amount, gst_percent, total
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            work_order_id, product_type, product_id,
+            category_name, sub_category, product_name, model_number, hsn_sac_code, unit,
+            quantity, price, discount_percent, discount_amount, gst_percent, total
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             id,
             item.product_type,
             item.product_id,
+            item.category_name || null,
+            item.sub_category || null,
+            item.product_name || null,
+            item.model_number || null,
+            item.hsn_sac_code || null,
+            item.unit || null,
             item.quantity,
             item.price,
             item.discount_percent,
@@ -560,9 +627,12 @@ export function updateWorkOrder(req, res) {
       }
     }
 
+    const hasProp = (key) => Object.prototype.hasOwnProperty.call(req.body || {}, key);
+
     run(
       `UPDATE work_orders
        SET performa_id = ?,
+           quotation_id = ?,
            inquiry_id = ?,
            prepared_by = ?,
            checked_by = ?,
@@ -571,19 +641,46 @@ export function updateWorkOrder(req, res) {
            total_discount = ?,
            total_gst = ?,
            total_amount = ?,
-           status = ?
+           status = ?,
+           work_order_date = ?,
+           calibration_nabl = ?,
+           packing = ?,
+           delivery_date = ?,
+           remarks = ?,
+           apply_gst = ?,
+           extra_charge_gst_percent = ?,
+           extra_charge_1 = ?,
+           extra_charge_2 = ?,
+           advance_display = ?,
+           advance_date = ?,
+           advance_description = ?,
+           advance_amount = ?
        WHERE id = ? AND is_deleted = 0`,
       [
-        Object.prototype.hasOwnProperty.call(req.body || {}, 'performa_id') ? toNullableInt(req.body.performa_id) : existing.performa_id,
-        Object.prototype.hasOwnProperty.call(req.body || {}, 'inquiry_id') ? toNullableInt(req.body.inquiry_id) : existing.inquiry_id,
-        Object.prototype.hasOwnProperty.call(req.body || {}, 'prepared_by') ? toNullableInt(req.body.prepared_by) : existing.prepared_by,
-        Object.prototype.hasOwnProperty.call(req.body || {}, 'checked_by') ? toNullableInt(req.body.checked_by) : existing.checked_by,
-        Object.prototype.hasOwnProperty.call(req.body || {}, 'approved_by') ? toNullableInt(req.body.approved_by) : existing.approved_by,
+        hasProp('performa_id') ? toNullableInt(req.body.performa_id) : existing.performa_id,
+        hasProp('quotation_id') ? toNullableInt(req.body.quotation_id) : (existing.quotation_id || null),
+        hasProp('inquiry_id') ? toNullableInt(req.body.inquiry_id) : existing.inquiry_id,
+        hasProp('prepared_by') ? toNullableInt(req.body.prepared_by) : existing.prepared_by,
+        hasProp('checked_by') ? toNullableInt(req.body.checked_by) : existing.checked_by,
+        hasProp('approved_by') ? toNullableInt(req.body.approved_by) : existing.approved_by,
         totals.subtotal,
         totals.total_discount,
         totals.total_gst,
         totals.total_amount,
         nextStatus,
+        hasProp('work_order_date') ? (req.body.work_order_date || null) : (existing.work_order_date || null),
+        hasProp('calibration_nabl') ? (req.body.calibration_nabl || null) : (existing.calibration_nabl || null),
+        hasProp('packing') ? (req.body.packing || null) : (existing.packing || null),
+        hasProp('delivery_date') ? (req.body.delivery_date || null) : (existing.delivery_date || null),
+        hasProp('remarks') ? (req.body.remarks || null) : (existing.remarks || null),
+        hasProp('apply_gst') ? (req.body.apply_gst ? 1 : 0) : (existing.apply_gst ?? 1),
+        hasProp('extra_charge_gst_percent') ? toNumber(req.body.extra_charge_gst_percent, 0) : (existing.extra_charge_gst_percent || 0),
+        hasProp('extra_charge_1') ? toNumber(req.body.extra_charge_1, 0) : (existing.extra_charge_1 || 0),
+        hasProp('extra_charge_2') ? toNumber(req.body.extra_charge_2, 0) : (existing.extra_charge_2 || 0),
+        hasProp('advance_display') ? (req.body.advance_display ? 1 : 0) : (existing.advance_display || 0),
+        hasProp('advance_date') ? (req.body.advance_date || null) : (existing.advance_date || null),
+        hasProp('advance_description') ? (req.body.advance_description || null) : (existing.advance_description || null),
+        hasProp('advance_amount') ? toNumber(req.body.advance_amount, 0) : (existing.advance_amount || 0),
         id,
       ],
     );

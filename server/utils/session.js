@@ -96,7 +96,14 @@ export function createSession(user) {
 export function validateSession(token) {
   if (!token) return null;
   
-  const session = sessions.get(token);
+  let session = sessions.get(token);
+
+  // If not found in memory, reload from disk (handles cross-worker sessions)
+  if (!session) {
+    loadSessions();
+    session = sessions.get(token);
+  }
+
   if (!session) return null;
   
   // Check if session has expired

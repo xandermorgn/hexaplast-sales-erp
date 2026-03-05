@@ -245,6 +245,12 @@ function initDatabase() {
       performa_id INTEGER NOT NULL,
       product_type TEXT NOT NULL CHECK(product_type IN ('machine', 'spare')),
       product_id INTEGER NOT NULL,
+      category_name TEXT,
+      sub_category TEXT,
+      product_name TEXT,
+      model_number TEXT,
+      hsn_sac_code TEXT,
+      unit TEXT,
       quantity INTEGER NOT NULL DEFAULT 1,
       price REAL NOT NULL DEFAULT 0,
       discount_percent REAL DEFAULT 0,
@@ -261,9 +267,23 @@ function initDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       work_order_number TEXT UNIQUE NOT NULL,
       performa_id INTEGER,
+      quotation_id INTEGER,
       inquiry_id INTEGER,
       created_by INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      work_order_date DATETIME,
+      calibration_nabl TEXT,
+      packing TEXT,
+      delivery_date DATETIME,
+      remarks TEXT,
+      apply_gst INTEGER DEFAULT 1,
+      extra_charge_gst_percent REAL DEFAULT 0,
+      extra_charge_1 INTEGER DEFAULT 0,
+      extra_charge_2 INTEGER DEFAULT 0,
+      advance_display INTEGER DEFAULT 0,
+      advance_date DATETIME,
+      advance_description TEXT,
+      advance_amount REAL DEFAULT 0,
       prepared_by INTEGER,
       checked_by INTEGER,
       approved_by INTEGER,
@@ -278,6 +298,7 @@ function initDatabase() {
       status TEXT DEFAULT 'generated',
       is_deleted INTEGER DEFAULT 0,
       FOREIGN KEY (performa_id) REFERENCES performa_invoices(id) ON DELETE SET NULL,
+      FOREIGN KEY (quotation_id) REFERENCES quotations(id) ON DELETE SET NULL,
       FOREIGN KEY (inquiry_id) REFERENCES customer_inquiries(id) ON DELETE SET NULL,
       FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
       FOREIGN KEY (prepared_by) REFERENCES users(id) ON DELETE SET NULL,
@@ -293,6 +314,12 @@ function initDatabase() {
       work_order_id INTEGER NOT NULL,
       product_type TEXT NOT NULL CHECK(product_type IN ('machine', 'spare')),
       product_id INTEGER NOT NULL,
+      category_name TEXT,
+      sub_category TEXT,
+      product_name TEXT,
+      model_number TEXT,
+      hsn_sac_code TEXT,
+      unit TEXT,
       quantity INTEGER NOT NULL DEFAULT 1,
       price REAL NOT NULL DEFAULT 0,
       discount_percent REAL DEFAULT 0,
@@ -424,6 +451,39 @@ function initDatabase() {
     console.log('Performa migration check completed:', migrationError.message);
   }
 
+  // Migration: Add optional item snapshot columns to performa_items
+  try {
+    const performaItemsInfo = db.pragma('table_info(performa_items)');
+    const performaItemColumns = performaItemsInfo.map(row => row.name);
+
+    if (!performaItemColumns.includes('category_name')) {
+      db.exec('ALTER TABLE performa_items ADD COLUMN category_name TEXT');
+      console.log('Migration: Added category_name column to performa_items');
+    }
+    if (!performaItemColumns.includes('sub_category')) {
+      db.exec('ALTER TABLE performa_items ADD COLUMN sub_category TEXT');
+      console.log('Migration: Added sub_category column to performa_items');
+    }
+    if (!performaItemColumns.includes('product_name')) {
+      db.exec('ALTER TABLE performa_items ADD COLUMN product_name TEXT');
+      console.log('Migration: Added product_name column to performa_items');
+    }
+    if (!performaItemColumns.includes('model_number')) {
+      db.exec('ALTER TABLE performa_items ADD COLUMN model_number TEXT');
+      console.log('Migration: Added model_number column to performa_items');
+    }
+    if (!performaItemColumns.includes('hsn_sac_code')) {
+      db.exec('ALTER TABLE performa_items ADD COLUMN hsn_sac_code TEXT');
+      console.log('Migration: Added hsn_sac_code column to performa_items');
+    }
+    if (!performaItemColumns.includes('unit')) {
+      db.exec('ALTER TABLE performa_items ADD COLUMN unit TEXT');
+      console.log('Migration: Added unit column to performa_items');
+    }
+  } catch (migrationError) {
+    console.log('Performa items migration check completed:', migrationError.message);
+  }
+
   // Migration: Add missing columns to work_orders if they don't exist
   try {
     const workOrderTableInfo = db.pragma('table_info(work_orders)');
@@ -468,8 +528,98 @@ function initDatabase() {
       db.exec('ALTER TABLE work_orders ADD COLUMN error_log TEXT');
       console.log('Migration: Added error_log column to work_orders');
     }
+
+    if (!workOrderColumns.includes('quotation_id')) {
+      db.exec('ALTER TABLE work_orders ADD COLUMN quotation_id INTEGER');
+      console.log('Migration: Added quotation_id column to work_orders');
+    }
+    if (!workOrderColumns.includes('work_order_date')) {
+      db.exec('ALTER TABLE work_orders ADD COLUMN work_order_date DATETIME');
+      console.log('Migration: Added work_order_date column to work_orders');
+    }
+    if (!workOrderColumns.includes('calibration_nabl')) {
+      db.exec('ALTER TABLE work_orders ADD COLUMN calibration_nabl TEXT');
+      console.log('Migration: Added calibration_nabl column to work_orders');
+    }
+    if (!workOrderColumns.includes('packing')) {
+      db.exec('ALTER TABLE work_orders ADD COLUMN packing TEXT');
+      console.log('Migration: Added packing column to work_orders');
+    }
+    if (!workOrderColumns.includes('delivery_date')) {
+      db.exec('ALTER TABLE work_orders ADD COLUMN delivery_date DATETIME');
+      console.log('Migration: Added delivery_date column to work_orders');
+    }
+    if (!workOrderColumns.includes('remarks')) {
+      db.exec('ALTER TABLE work_orders ADD COLUMN remarks TEXT');
+      console.log('Migration: Added remarks column to work_orders');
+    }
+    if (!workOrderColumns.includes('apply_gst')) {
+      db.exec('ALTER TABLE work_orders ADD COLUMN apply_gst INTEGER DEFAULT 1');
+      console.log('Migration: Added apply_gst column to work_orders');
+    }
+    if (!workOrderColumns.includes('extra_charge_gst_percent')) {
+      db.exec('ALTER TABLE work_orders ADD COLUMN extra_charge_gst_percent REAL DEFAULT 0');
+      console.log('Migration: Added extra_charge_gst_percent column to work_orders');
+    }
+    if (!workOrderColumns.includes('extra_charge_1')) {
+      db.exec('ALTER TABLE work_orders ADD COLUMN extra_charge_1 INTEGER DEFAULT 0');
+      console.log('Migration: Added extra_charge_1 column to work_orders');
+    }
+    if (!workOrderColumns.includes('extra_charge_2')) {
+      db.exec('ALTER TABLE work_orders ADD COLUMN extra_charge_2 INTEGER DEFAULT 0');
+      console.log('Migration: Added extra_charge_2 column to work_orders');
+    }
+    if (!workOrderColumns.includes('advance_display')) {
+      db.exec('ALTER TABLE work_orders ADD COLUMN advance_display INTEGER DEFAULT 0');
+      console.log('Migration: Added advance_display column to work_orders');
+    }
+    if (!workOrderColumns.includes('advance_date')) {
+      db.exec('ALTER TABLE work_orders ADD COLUMN advance_date DATETIME');
+      console.log('Migration: Added advance_date column to work_orders');
+    }
+    if (!workOrderColumns.includes('advance_description')) {
+      db.exec('ALTER TABLE work_orders ADD COLUMN advance_description TEXT');
+      console.log('Migration: Added advance_description column to work_orders');
+    }
+    if (!workOrderColumns.includes('advance_amount')) {
+      db.exec('ALTER TABLE work_orders ADD COLUMN advance_amount REAL DEFAULT 0');
+      console.log('Migration: Added advance_amount column to work_orders');
+    }
   } catch (migrationError) {
     console.log('Work order migration check completed:', migrationError.message);
+  }
+
+  // Migration: Add optional item snapshot columns to work_order_items
+  try {
+    const workOrderItemsInfo = db.pragma('table_info(work_order_items)');
+    const workOrderItemColumns = workOrderItemsInfo.map(row => row.name);
+
+    if (!workOrderItemColumns.includes('category_name')) {
+      db.exec('ALTER TABLE work_order_items ADD COLUMN category_name TEXT');
+      console.log('Migration: Added category_name column to work_order_items');
+    }
+    if (!workOrderItemColumns.includes('sub_category')) {
+      db.exec('ALTER TABLE work_order_items ADD COLUMN sub_category TEXT');
+      console.log('Migration: Added sub_category column to work_order_items');
+    }
+    if (!workOrderItemColumns.includes('product_name')) {
+      db.exec('ALTER TABLE work_order_items ADD COLUMN product_name TEXT');
+      console.log('Migration: Added product_name column to work_order_items');
+    }
+    if (!workOrderItemColumns.includes('model_number')) {
+      db.exec('ALTER TABLE work_order_items ADD COLUMN model_number TEXT');
+      console.log('Migration: Added model_number column to work_order_items');
+    }
+    if (!workOrderItemColumns.includes('hsn_sac_code')) {
+      db.exec('ALTER TABLE work_order_items ADD COLUMN hsn_sac_code TEXT');
+      console.log('Migration: Added hsn_sac_code column to work_order_items');
+    }
+    if (!workOrderItemColumns.includes('unit')) {
+      db.exec('ALTER TABLE work_order_items ADD COLUMN unit TEXT');
+      console.log('Migration: Added unit column to work_order_items');
+    }
+  } catch (migrationError) {
+    console.log('Work order items migration check completed:', migrationError.message);
   }
 
   // Migration: Add missing is_deleted columns for soft-delete support
