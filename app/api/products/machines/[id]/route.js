@@ -1,16 +1,30 @@
-import { executeController, parseJsonBody } from '../../../../../server/next/adapter.js';
+import { executeController } from '../../../../../server/next/adapter.js';
 import { requireSession } from '../../../../../server/middleware/sessionMiddleware.js';
-import { updateProduct, deleteProduct, uploadProductImage } from '../../../../../server/controllers/productController.js';
+import { updateProduct, deleteProduct } from '../../../../../server/controllers/productController.js';
+import { parseProductFormRequest } from '../../_helpers.js';
 
 export async function PUT(request, { params }) {
   const { id } = await params;
-  return executeController({
-    request,
-    controller: updateProduct,
-    middlewares: [requireSession, uploadProductImage],
-    params: { id },
-    extra: { productType: 'machine' },
-  });
+  try {
+    const { body, file } = await parseProductFormRequest(request, 'machine');
+    return executeController({
+      request,
+      controller: updateProduct,
+      middlewares: [requireSession],
+      params: { id },
+      body,
+      extra: { productType: 'machine', file },
+    });
+  } catch (error) {
+    const status = Number.isInteger(error?.statusCode) ? error.statusCode : 400;
+    return Response.json(
+      {
+        error: 'Upload failed',
+        message: error?.message || 'Failed to parse product form data',
+      },
+      { status },
+    );
+  }
 }
 
 export async function DELETE(request, { params }) {

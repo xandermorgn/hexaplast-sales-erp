@@ -10,7 +10,17 @@ import { Textarea } from "@/components/ui/textarea"
 import { DateRangeFilter } from "@/components/ui/date-range-filter"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/hooks/use-auth"
+import { useGeoCountries, useGeoStates, useGeoCities } from "@/hooks/use-geo"
 import { apiUrl } from "@/lib/api"
+import { FollowUpSection } from "@/components/follow-up-section"
+
+type AssignableUser = {
+  id: number
+  name: string
+  role: string
+  designation: string
+  label: string
+}
 
 interface Inquiry {
   id: number
@@ -57,7 +67,6 @@ type InquiryForm = {
   city: string
   remarks: string
   followup: string
-  status: string
 }
 
 const initialForm: InquiryForm = {
@@ -79,7 +88,6 @@ const initialForm: InquiryForm = {
   city: "",
   remarks: "",
   followup: "",
-  status: "open",
 }
 
 export default function CustomerInquiriesPage() {
@@ -99,12 +107,30 @@ export default function CustomerInquiriesPage() {
     to_date: "",
   })
 
+  // Geo dropdowns
+  const [selectedCountryId, setSelectedCountryId] = useState<number | null>(null)
+  const [selectedStateId, setSelectedStateId] = useState<number | null>(null)
+  const { countries } = useGeoCountries()
+  const { states } = useGeoStates(selectedCountryId)
+  const { cities } = useGeoCities(selectedStateId)
+
+  // Assignable users
+  const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([])
+
+  useEffect(() => {
+    fetch(apiUrl("/api/users/assignable"), { credentials: "include" })
+      .then((r) => r.json())
+      .then((d) => setAssignableUsers(d.users || []))
+      .catch(() => {})
+  }, [])
+
   const menuItems = [
     { id: "inquiries", label: "Customer Inquiries" },
     { id: "quotations", label: "Quotations" },
     { id: "performas", label: "Performas" },
     { id: "work-orders", label: "Work Orders" },
     { id: "products", label: "Products" },
+    { id: "followups", label: "Follow Ups" },
   ]
 
   function handleSectionChange(section: string) {
@@ -114,6 +140,7 @@ export default function CustomerInquiriesPage() {
       performas: "/dashboard/performas",
       "work-orders": "/dashboard/work-orders",
       products: "/dashboard/products",
+      followups: "/dashboard/followups",
     }
 
     const target = routeMap[section]
@@ -167,7 +194,9 @@ export default function CustomerInquiriesPage() {
 
   function openCreateForm() {
     setEditingId(null)
-    setForm(initialForm)
+    setForm({ ...initialForm, assigned_to: user?.id ? String(user.id) : "" })
+    setSelectedCountryId(null)
+    setSelectedStateId(null)
     setShowForm(true)
   }
 
@@ -192,8 +221,12 @@ export default function CustomerInquiriesPage() {
       city: item.city || "",
       remarks: item.remarks || "",
       followup: item.followup || "",
-      status: item.status || "open",
     })
+    // Resolve geo IDs from names for editing
+    const matchedCountry = countries.find((c) => c.name === item.country)
+    setSelectedCountryId(matchedCountry?.id ?? null)
+    // State/city IDs will resolve via effects once states/cities load
+    setSelectedStateId(null)
     setShowForm(true)
   }
 
@@ -312,6 +345,7 @@ export default function CustomerInquiriesPage() {
         </div>
 
         {showForm && (
+          <>
           <form onSubmit={handleSubmit} className="rounded-lg border border-gray-200 bg-white p-5 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
@@ -343,11 +377,11 @@ export default function CustomerInquiriesPage() {
                 <Input value={form.gst_number} onChange={(e) => setForm({ ...form, gst_number: e.target.value })} />
               </div>
               <div>
-                <Label>Assigned To (User ID)</Label>
+                <Label>Assigned To</Label>
                 <Input
-                  value={form.assigned_to}
-                  onChange={(e) => setForm({ ...form, assigned_to: e.target.value })}
-                  placeholder="e.g. 2"
+                  value={user?.name || ""}
+                  readOnly
+                  className="bg-gray-50 cursor-not-allowed"
                 />
               </div>
               <div>
@@ -368,31 +402,57 @@ export default function CustomerInquiriesPage() {
               </div>
               <div>
                 <Label>Country</Label>
-                <Input value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} />
+                <select
+                  className="w-full border border-gray-300 rounded-md h-10 px-3"
+                  value={form.country}
+                  onChange={(e) => {
+                    const name = e.target.value
+                    const c = countries.find((x) => x.name === name)
+                    setSelectedCountryId(c?.id ?? null)
+                    setSelectedStateId(null)
+                    setForm({ ...form, country: name, state: "", city: "" })
+                  }}
+                >
+                  <option value="">Select country</option>
+                  {countries.map((c) => (
+                    <option key={c.id} value={c.name}>{c.name}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <Label>State</Label>
-                <Input value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} />
+                <select
+                  className="w-full border border-gray-300 rounded-md h-10 px-3"
+                  value={form.state}
+                  onChange={(e) => {
+                    const name = e.target.value
+                    const s = states.find((x) => x.name === name)
+                    setSelectedStateId(s?.id ?? null)
+                    setForm({ ...form, state: name, city: "" })
+                  }}
+                >
+                  <option value="">Select state</option>
+                  {states.map((s) => (
+                    <option key={s.id} value={s.name}>{s.name}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <Label>City</Label>
-                <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+                <select
+                  className="w-full border border-gray-300 rounded-md h-10 px-3"
+                  value={form.city}
+                  onChange={(e) => setForm({ ...form, city: e.target.value })}
+                >
+                  <option value="">Select city</option>
+                  {cities.map((c) => (
+                    <option key={c.id} value={c.name}>{c.name}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <Label>Follow-up</Label>
                 <Input value={form.followup} onChange={(e) => setForm({ ...form, followup: e.target.value })} />
-              </div>
-              <div>
-                <Label>Status</Label>
-                <select
-                  className="w-full border border-gray-300 rounded-md h-10 px-3"
-                  value={form.status}
-                  onChange={(e) => setForm({ ...form, status: e.target.value })}
-                >
-                  <option value="open">open</option>
-                  <option value="in_progress">in_progress</option>
-                  <option value="closed">closed</option>
-                </select>
               </div>
             </div>
 
@@ -414,6 +474,11 @@ export default function CustomerInquiriesPage() {
               <Button type="submit">{editingId ? "Update" : "Create"}</Button>
             </div>
           </form>
+
+          {editingId && (
+            <FollowUpSection entityType="enquiry" entityId={editingId} />
+          )}
+          </>
         )}
         {!showForm && (
           <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
@@ -428,7 +493,6 @@ export default function CustomerInquiriesPage() {
                   <th className="px-3 py-2 text-left">Email</th>
                   <th className="px-3 py-2 text-left">Source</th>
                   <th className="px-3 py-2 text-left">Category</th>
-                  <th className="px-3 py-2 text-left">Status</th>
                   <th className="px-3 py-2 text-left">Follow-up</th>
                   <th className="px-3 py-2 text-left">Actions</th>
                 </tr>
@@ -436,11 +500,11 @@ export default function CustomerInquiriesPage() {
               <tbody>
                 {isFetching ? (
                   <tr>
-                    <td className="px-3 py-3" colSpan={11}>Loading...</td>
+                    <td className="px-3 py-3" colSpan={10}>Loading...</td>
                   </tr>
                 ) : inquiries.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-3" colSpan={11}>No inquiries found.</td>
+                    <td className="px-3 py-3" colSpan={10}>No inquiries found.</td>
                   </tr>
                 ) : (
                   inquiries.map((item) => (
@@ -453,7 +517,6 @@ export default function CustomerInquiriesPage() {
                       <td className="px-3 py-2">{item.email || "-"}</td>
                       <td className="px-3 py-2">{item.enquiry_source || "-"}</td>
                       <td className="px-3 py-2">{item.category || "-"}</td>
-                      <td className="px-3 py-2">{item.status || "-"}</td>
                       <td className="px-3 py-2">{item.followup || "-"}</td>
                       <td className="px-3 py-2">
                         <div className="flex gap-2">

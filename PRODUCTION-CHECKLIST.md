@@ -6,7 +6,7 @@
 - ✅ **Frontend API Calls**: Same-origin relative paths only (`/api/...`)
 - ✅ **No Frontend Base URL Env**: frontend does not use an API base URL variable
 - ✅ **Implementation**: `lib/api.ts` enforces relative-only API paths
-- ✅ **Proxy**: `next.config.mjs` rewrites `/api/:path*` → `http://127.0.0.1:4001/api/:path*`
+- ✅ **Unified**: All API routes handled by Next.js `app/api/` (no separate backend)
 - ✅ **No hardcoded frontend backend origin**
 
 ### Authentication
@@ -20,8 +20,7 @@
 - ✅ **Frontend (.env)**:
   - `NODE_ENV` - Set to "production"
   
-- ✅ **Backend (backend/.env)**:
-  - `PORT` - Backend server port (default: 4001)
+- ✅ **Server**:
   - `SESSION_SECRET` - Strong random string for sessions
   - `NODE_ENV` - Set to "production"
 
@@ -64,17 +63,11 @@
 - ✅ `clean` - Clean build artifacts
 
 ### PM2 Configuration (ecosystem.config.js)
-- ✅ Backend process: `hexaplast-erp-backend`
-  - Script: `./backend/server.js`
-  - Port: 4001
-  - Memory limit: 500M
-  - Logs: `backend/logs/pm2-*.log`
-  
-- ✅ Frontend process: `hexaplast-erp-frontend`
-  - Script: Next.js start
+- ✅ Single process: `hexaplast-erp`
+  - Script: `next start`
   - Port: 3000
   - Memory limit: 1G
-  - Logs: `logs/pm2-frontend-*.log`
+  - Logs: `logs/pm2-*.log`
 
 ### Deployment Script (deploy.bat)
 - ✅ Git pull
@@ -112,7 +105,7 @@
 - [ ] Node.js v18+ installed
 - [ ] Git installed
 - [ ] PM2 installed globally (`npm install -g pm2`)
-- [ ] Ports 3000 and 4001 available
+- [ ] Port 3000 available
 - [ ] Windows Firewall configured
 
 ### Configuration
@@ -163,10 +156,9 @@ pm2 logs
 
 # Check ports
 netstat -ano | findstr :3000
-netstat -ano | findstr :4001
 
 # Test API endpoint
-curl http://127.0.0.1:4001/api/auth/check
+curl http://127.0.0.1:3000/api/auth/check
 
 # Check build output
 dir .next
@@ -244,7 +236,7 @@ echo %NODE_ENV%
 
 1. **SESSION_SECRET**: Must be changed from example value in production
 2. **Frontend API Calls**: Must remain relative (`/api/...`) with no absolute backend URL
-3. **Firewall**: Ensure ports 3000 and 4001 are accessible on LAN
+3. **Firewall**: Ensure port 3000 is accessible on LAN
 4. **Backups**: Set up regular database and uploads backups
 5. **Logs**: Configure log rotation to prevent disk space issues
 6. **Updates**: Use `deploy.bat` for all future deployments

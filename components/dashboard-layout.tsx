@@ -164,7 +164,48 @@ export function DashboardLayout({
 
   const [internalNotifications, setInternalNotifications] = useState<Notification[]>([])
 
-  // Socket.io notifications disabled – will be replaced with polling/SSE
+  // Follow-up reminder polling – replaces socket.io notifications
+  useEffect(() => {
+    let cancelled = false
+
+    async function pollDueFollowUps() {
+      try {
+        const res = await fetch("/api/followups/due", { credentials: "include" })
+        if (!res.ok || cancelled) return
+        const data = await res.json()
+        const due = data.follow_ups || []
+
+        if (due.length > 0) {
+          const mapped: Notification[] = due.map((f: any) => ({
+            id: `followup-${f.id}`,
+            title: `Reminder: ${f.note || "Follow-up due"}`,
+            message: `${f.entity_type} follow-up is due`,
+            time: new Date(f.reminder_datetime),
+            read: false,
+          }))
+          setInternalNotifications(mapped)
+
+          // Browser notification
+          if (typeof window !== "undefined" && "Notification" in window && window.Notification.permission === "granted") {
+            for (const n of mapped) {
+              new window.Notification(n.title, { body: n.message })
+            }
+          }
+        }
+      } catch {
+        // ignore polling errors
+      }
+    }
+
+    // Request browser notification permission
+    if (typeof window !== "undefined" && "Notification" in window && window.Notification.permission === "default") {
+      window.Notification.requestPermission()
+    }
+
+    pollDueFollowUps()
+    const interval = setInterval(pollDueFollowUps, 30000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [])
 
   const notifications = externalNotifications || internalNotifications
   const unreadCount = notifications.filter((n) => !n.read).length
@@ -175,24 +216,23 @@ export function DashboardLayout({
 
     const loadProfile = async () => {
       try {
-        const res = await fetch(`/api/profile/me`, { credentials: "include" })
-        const json = res.ok ? await res.json() : null
-        const p = json?.profile
+        const [profileRes, photoRes] = await Promise.all([
+          fetch(`/api/profile/me`, { credentials: "include" }),
+          fetch(`/api/profile/photo`, { credentials: "include" }),
+        ])
+
+        const profileJson = profileRes.ok ? await profileRes.json() : null
+        const photoJson = photoRes.ok ? await photoRes.json() : null
+        const p = profileJson?.profile
 
         if (cancelled || !p) return
 
-        const rawPath = p.photo_path ? String(p.photo_path) : ""
-        const photoUrl = rawPath
-          ? rawPath.startsWith("http://") || rawPath.startsWith("https://")
-            ? rawPath
-            : rawPath.startsWith("/uploads/") ? `/api/serve-upload/${rawPath.slice(9)}` : rawPath
-          : ""
         setProfileData((prev: ProfileData) => ({
           ...prev,
           name: String(p.display_name || prev.name || loginId),
           email: String(p.personal_email || prev.email || ""),
           phone: String(p.personal_phone || prev.phone || ""),
-          photoUrl,
+          photoUrl: photoJson?.photo_data_uri || "",
         }))
       } catch {
         // ignore: header should still render with fallback initials
@@ -207,10 +247,10 @@ export function DashboardLayout({
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      // Never persist blob: URLs across sessions (they break after reload)
+      // Never persist blob: URLs or data: URIs across sessions (they are too large / break after reload)
       const safe: ProfileData = {
         ...profileData,
-        photoUrl: profileData.photoUrl?.startsWith("blob:") ? "" : profileData.photoUrl,
+        photoUrl: profileData.photoUrl?.startsWith("blob:") || profileData.photoUrl?.startsWith("data:") ? "" : profileData.photoUrl,
       }
       sessionStorage.setItem("profileData", JSON.stringify(safe))
     }
@@ -234,7 +274,27 @@ export function DashboardLayout({
     onSectionChange(itemId)
   }
 
-  const handleSaveProfile = () => {
+  const handleSaveProfile = async () => {
+    try {
+      const res = await fetch(`/api/profile/me`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          display_name: profileData.name,
+          personal_phone: profileData.phone || null,
+          personal_email: profileData.email || null,
+        }),
+      })
+      if (res.ok) {
+        toast({ title: "Success", description: "Profile saved" })
+      } else {
+        const err = await res.json()
+        toast({ title: "Error", description: err.message || "Failed to save profile", variant: "destructive" })
+      }
+    } catch {
+      toast({ title: "Error", description: "Failed to save profile", variant: "destructive" })
+    }
     setShowProfileModal(false)
   }
 
@@ -506,13 +566,33 @@ export function DashboardLayout({
                   <span className="text-xs text-white">Change</span>
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/jpg,image/png"
                     className="hidden"
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const file = e.target.files?.[0]
-                      if (file) {
-                        const url = URL.createObjectURL(file)
-                        setProfileData((prev: ProfileData) => ({ ...prev, photoUrl: url }))
+                      if (!file) return
+                      try {
+                        const dataUri = await new Promise<string>((resolve, reject) => {
+                          const reader = new FileReader()
+                          reader.onload = () => resolve(reader.result as string)
+                          reader.onerror = reject
+                          reader.readAsDataURL(file)
+                        })
+                        const res = await fetch(`/api/profile/photo`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          credentials: "include",
+                          body: JSON.stringify({ photo_base64: dataUri }),
+                        })
+                        if (res.ok) {
+                          setProfileData((prev: ProfileData) => ({ ...prev, photoUrl: dataUri }))
+                          toast({ title: "Success", description: "Photo updated" })
+                        } else {
+                          const err = await res.json()
+                          toast({ title: "Error", description: err.message || "Failed to upload photo", variant: "destructive" })
+                        }
+                      } catch {
+                        toast({ title: "Error", description: "Failed to upload photo", variant: "destructive" })
                       }
                     }}
                   />

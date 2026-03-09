@@ -6,16 +6,23 @@ import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
+import { useGeoCurrencies } from "@/hooks/use-geo"
+import { useCategories, type Category } from "@/hooks/use-categories"
 import { apiUrl } from "@/lib/api"
 
 type ProductTab = "machines" | "spares" | "categories"
 
-type Category = {
-  id: number
-  category_name: string
+type MachinePart = {
+  id?: number
+  machine_id?: number
+  part_number: string
+  part_name: string
+  specification: string
+  unit: string
 }
 
 type Product = {
@@ -69,6 +76,14 @@ const emptyProductForm: ProductForm = {
   image: null,
 }
 
+function getImageUrl(path: string | null) {
+  if (!path) return null
+  if (path.startsWith("/uploads/")) return `/api/serve-upload/${path.replace("/uploads/", "")}`
+  if (path.startsWith("uploads/")) return `/api/serve-upload/${path.replace("uploads/", "")}`
+  return path
+}
+
+
 export default function ProductsPage() {
   const router = useRouter()
   const { user, isLoading, logout } = useAuth()
@@ -76,7 +91,7 @@ export default function ProductsPage() {
 
   const [activeSection, setActiveSection] = useState("products")
   const [activeTab, setActiveTab] = useState<ProductTab>("machines")
-  const [categories, setCategories] = useState<Category[]>([])
+  const { categories, invalidate: refreshCategories } = useCategories()
   const [machineProducts, setMachineProducts] = useState<Product[]>([])
   const [spareProducts, setSpareProducts] = useState<Product[]>([])
 
@@ -86,6 +101,16 @@ export default function ProductsPage() {
   const [spareEditId, setSpareEditId] = useState<number | null>(null)
 
   const [categoryName, setCategoryName] = useState("")
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false)
+  const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null)
+  const [deletingCategoryId, setDeletingCategoryId] = useState<number | null>(null)
+  const { currencies: currencyOptions } = useGeoCurrencies()
+
+  // Machine Parts state
+  const [partsModalMachineId, setPartsModalMachineId] = useState<number | null>(null)
+  const [partsModalMachineName, setPartsModalMachineName] = useState("")
+  const [machineParts, setMachineParts] = useState<MachinePart[]>([])
+  const [savingParts, setSavingParts] = useState(false)
 
   const menuItems = [
     { id: "inquiries", label: "Customer Inquiries" },
@@ -93,6 +118,7 @@ export default function ProductsPage() {
     { id: "performas", label: "Performas" },
     { id: "work-orders", label: "Work Orders" },
     { id: "products", label: "Products" },
+    { id: "followups", label: "Follow Ups" },
   ]
 
   function handleSectionChange(section: string) {
@@ -102,6 +128,7 @@ export default function ProductsPage() {
       performas: "/dashboard/performas",
       "work-orders": "/dashboard/work-orders",
       products: "/dashboard/products",
+      followups: "/dashboard/followups",
     }
 
     const target = routeMap[section]
@@ -111,19 +138,6 @@ export default function ProductsPage() {
     }
 
     setActiveSection("products")
-  }
-
-  async function fetchCategories() {
-    const response = await fetch(apiUrl("/api/products/categories"), {
-      credentials: "include",
-    })
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch categories")
-    }
-
-    const data = await response.json()
-    setCategories(data.categories || [])
   }
 
   async function fetchProducts(kind: "machines" | "spares") {
@@ -147,7 +161,6 @@ export default function ProductsPage() {
   async function loadAll() {
     try {
       await Promise.all([
-        fetchCategories(),
         fetchProducts("machines"),
         fetchProducts("spares"),
       ])
@@ -165,18 +178,22 @@ export default function ProductsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  function stripCommas(value: string) {
+    return value.replace(/,/g, "")
+  }
+
   function buildProductFormData(form: ProductForm) {
     const formData = new FormData()
 
     formData.append("category_id", form.category_id)
     formData.append("product_name", form.product_name)
     formData.append("model_number", form.model_number)
-    formData.append("sales_price", form.sales_price)
-    formData.append("purchase_price", form.purchase_price)
+    formData.append("sales_price", stripCommas(form.sales_price))
+    formData.append("purchase_price", stripCommas(form.purchase_price))
     formData.append("hsn_code", form.hsn_code)
     formData.append("sac_code", form.sac_code)
-    formData.append("gst_percent", form.gst_percent)
-    formData.append("quantity", form.quantity)
+    formData.append("gst_percent", stripCommas(form.gst_percent))
+    formData.append("quantity", "0")
     formData.append("currency", form.currency || "INR")
     formData.append("description", form.description)
     formData.append("specifications", form.specifications)
@@ -204,6 +221,15 @@ export default function ProductsPage() {
       return
     }
 
+    if (!form.product_name.trim()) {
+      toast({
+        title: "Validation",
+        description: "Product name is required",
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
       const endpoint = editId
         ? `/api/products/${kind}/${editId}`
@@ -215,7 +241,11 @@ export default function ProductsPage() {
         body: buildProductFormData(form),
       })
 
-      const data = await response.json()
+      const contentType = response.headers.get("content-type") || ""
+      const data = contentType.includes("application/json")
+        ? await response.json()
+        : { message: await response.text() }
+
       if (!response.ok) {
         throw new Error(data?.message || `Failed to save ${kind}`)
       }
@@ -243,46 +273,77 @@ export default function ProductsPage() {
     }
   }
 
+  function openCategoryModal(category?: Category) {
+    if (category) {
+      setEditingCategoryId(category.id)
+      setCategoryName(category.category_name)
+    } else {
+      setEditingCategoryId(null)
+      setCategoryName("")
+    }
+    setCategoryModalOpen(true)
+  }
+
+  function closeCategoryModal() {
+    setCategoryModalOpen(false)
+    setEditingCategoryId(null)
+    setCategoryName("")
+  }
+
   async function submitCategory(event: FormEvent) {
     event.preventDefault()
 
-    const payload = {
-      category_name: categoryName.trim(),
-    }
-
-    if (!payload.category_name) {
-      toast({
-        title: "Validation",
-        description: "Category name is required",
-        variant: "destructive",
-      })
+    const trimmed = categoryName.trim()
+    if (!trimmed) {
+      toast({ title: "Validation", description: "Category name is required", variant: "destructive" })
       return
     }
 
     try {
-      const response = await fetch(apiUrl("/api/products/categories"), {
-        method: "POST",
+      const isUpdate = editingCategoryId !== null
+      const url = isUpdate
+        ? apiUrl(`/api/products/categories/${editingCategoryId}`)
+        : apiUrl("/api/products/categories")
+
+      const response = await fetch(url, {
+        method: isUpdate ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ category_name: trimmed }),
       })
 
       const data = await response.json()
-      if (!response.ok) {
-        throw new Error(data?.message || "Failed to create category")
-      }
+      if (!response.ok) throw new Error(data?.message || "Failed to save category")
 
-      toast({
-        title: "Success",
-        description: "Category created",
-      })
-
-      setCategoryName("")
-      await fetchCategories()
+      toast({ title: "Success", description: isUpdate ? "Category updated" : "Category created" })
+      closeCategoryModal()
+      await refreshCategories()
     } catch (error) {
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create category",
+        description: error instanceof Error ? error.message : "Failed to save category",
+        variant: "destructive",
+      })
+    }
+  }
+
+  async function deleteCategory(categoryId: number) {
+    try {
+      const response = await fetch(apiUrl(`/api/products/categories/${categoryId}`), {
+        method: "DELETE",
+        credentials: "include",
+      })
+
+      const data = await response.json()
+      if (!response.ok) throw new Error(data?.message || "Failed to delete category")
+
+      toast({ title: "Success", description: "Category deleted" })
+      setDeletingCategoryId(null)
+      await refreshCategories()
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete category",
         variant: "destructive",
       })
     }
@@ -303,6 +364,94 @@ export default function ProductsPage() {
       description: product.description || "",
       specifications: product.specifications || "",
       image: null,
+    }
+  }
+
+  // ── Machine Parts ──
+
+  async function openPartsModal(machine: Product) {
+    setPartsModalMachineId(machine.id)
+    setPartsModalMachineName(machine.product_name || "Machine")
+    try {
+      const res = await fetch(apiUrl(`/api/products/machines/${machine.id}/parts`), { credentials: "include" })
+      if (res.ok) {
+        const data = await res.json()
+        setMachineParts((data.parts || []).map((p: any) => ({
+          id: p.id,
+          machine_id: p.machine_id,
+          part_number: p.part_number || "",
+          part_name: p.part_name || "",
+          specification: p.specification || "",
+          unit: p.unit || "Nos",
+          default_quantity: Number(p.default_quantity) || 1,
+        })))
+      }
+    } catch {
+      toast({ title: "Error", description: "Failed to load parts", variant: "destructive" })
+    }
+  }
+
+  function closePartsModal() {
+    setPartsModalMachineId(null)
+    setMachineParts([])
+  }
+
+  function addEmptyPart() {
+    setMachineParts([...machineParts, { part_number: "", part_name: "", specification: "", unit: "Nos" }])
+  }
+
+  function autoGeneratePartNumber(name: string, spec: string): string {
+    const shortName = name.trim().split(/\s+/)[0].toUpperCase().slice(0, 10)
+    const shortSpec = spec.trim().split(/\s+/).slice(0, 2).join("").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 6)
+    if (!shortName) return ""
+    return shortSpec ? `${shortName}-${shortSpec}` : shortName
+  }
+
+  function updatePartField(idx: number, field: keyof MachinePart, value: string | number) {
+    setMachineParts(machineParts.map((p, i) => i === idx ? { ...p, [field]: value } : p))
+  }
+
+  function removePartRow(idx: number) {
+    setMachineParts(machineParts.filter((_, i) => i !== idx))
+  }
+
+  async function saveParts() {
+    if (!partsModalMachineId) return
+
+    // Duplicate detection
+    const validParts = machineParts.filter((p) => p.part_name.trim())
+    const seen = new Set<string>()
+    for (const p of validParts) {
+      const key = `${p.part_name.trim().toLowerCase()}|${(p.specification || "").trim().toLowerCase()}`
+      if (seen.has(key)) {
+        toast({ title: "Duplicate part detected", description: `"${p.part_name}" with specification "${p.specification || "-"}" already exists in this list.`, variant: "destructive" })
+        return
+      }
+      seen.add(key)
+    }
+
+    // Auto-generate part numbers
+    const partsToSave = validParts.map((p) => ({
+      ...p,
+      part_number: p.part_number || autoGeneratePartNumber(p.part_name, p.specification),
+    }))
+
+    setSavingParts(true)
+    try {
+      const res = await fetch(apiUrl(`/api/products/machines/${partsModalMachineId}/parts`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ parts: partsToSave }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.message || "Failed to save parts")
+      toast({ title: "Success", description: "Machine parts saved" })
+      closePartsModal()
+    } catch (error) {
+      toast({ title: "Error", description: error instanceof Error ? error.message : "Failed to save parts", variant: "destructive" })
+    } finally {
+      setSavingParts(false)
     }
   }
 
@@ -348,16 +497,18 @@ export default function ProductsPage() {
             </div>
             <div>
               <Label>Product Name</Label>
-              <Input value={form.product_name} onChange={(e) => setForm({ ...form, product_name: e.target.value })} />
+              <Input
+                value={form.product_name}
+                onChange={(e) => setForm({ ...form, product_name: e.target.value })}
+                required
+              />
             </div>
-            <div>
-              <Label>Model Number</Label>
-              <Input value={form.model_number} onChange={(e) => setForm({ ...form, model_number: e.target.value })} />
-            </div>
-            <div>
-              <Label>Product Code</Label>
-              <Input value={editId ? "Auto-preserved on update" : "Auto-generated on save"} disabled />
-            </div>
+            {editId ? (
+              <div>
+                <Label>Product Code</Label>
+                <Input value="Auto-preserved" disabled />
+              </div>
+            ) : null}
             <div>
               <Label>Sales Price</Label>
               <Input value={form.sales_price} onChange={(e) => setForm({ ...form, sales_price: e.target.value })} />
@@ -379,12 +530,22 @@ export default function ProductsPage() {
               <Input value={form.gst_percent} onChange={(e) => setForm({ ...form, gst_percent: e.target.value })} />
             </div>
             <div>
-              <Label>Quantity</Label>
-              <Input value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} />
-            </div>
-            <div>
               <Label>Currency</Label>
-              <Input value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })} />
+              <Select
+                value={form.currency || "INR"}
+                onValueChange={(value) => setForm({ ...form, currency: value })}
+              >
+                <SelectTrigger className="w-full justify-start">
+                  <span>{form.currency || "INR"}</span>
+                </SelectTrigger>
+                <SelectContent>
+                  {currencyOptions.map((currency) => (
+                    <SelectItem key={currency.code} value={currency.code}>
+                      {currency.code} — {currency.country}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>Image Upload</Label>
@@ -427,42 +588,52 @@ export default function ProductsPage() {
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50 text-gray-700">
               <tr>
+                <th className="px-3 py-2 text-left">Image</th>
                 <th className="px-3 py-2 text-left">Code</th>
                 <th className="px-3 py-2 text-left">Name</th>
                 <th className="px-3 py-2 text-left">Category</th>
-                <th className="px-3 py-2 text-left">Model</th>
                 <th className="px-3 py-2 text-left">Sales</th>
                 <th className="px-3 py-2 text-left">Purchase</th>
-                <th className="px-3 py-2 text-left">Qty</th>
                 <th className="px-3 py-2 text-left">GST</th>
-                <th className="px-3 py-2 text-left">Image</th>
                 <th className="px-3 py-2 text-left">Actions</th>
               </tr>
             </thead>
             <tbody>
               {list.length === 0 ? (
                 <tr>
-                  <td className="px-3 py-3" colSpan={10}>No products found.</td>
+                  <td className="px-3 py-3" colSpan={8}>No products found.</td>
                 </tr>
               ) : (
-                list.map((product) => (
+                list.map((product) => {
+                  const imgUrl = getImageUrl(product.image_path)
+                  return (
                   <tr key={product.id} className="border-t">
+                    <td className="px-3 py-2">
+                      {imgUrl ? (
+                        <img src={imgUrl} alt="" className="w-10 h-10 rounded object-cover" />
+                      ) : (
+                        <div className="w-10 h-10 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs">—</div>
+                      )}
+                    </td>
                     <td className="px-3 py-2">{product.product_code || "-"}</td>
                     <td className="px-3 py-2">{product.product_name || "-"}</td>
                     <td className="px-3 py-2">{product.category_name || "-"}</td>
-                    <td className="px-3 py-2">{product.model_number || "-"}</td>
                     <td className="px-3 py-2">{product.sales_price ?? "-"}</td>
                     <td className="px-3 py-2">{product.purchase_price ?? "-"}</td>
-                    <td className="px-3 py-2">{product.quantity ?? "-"}</td>
                     <td className="px-3 py-2">{product.gst_percent ?? "-"}</td>
-                    <td className="px-3 py-2">{product.image_path ? "Uploaded" : "-"}</td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 flex gap-1">
                       <Button size="sm" variant="outline" onClick={() => startEdit(kind, product)}>
                         Edit
                       </Button>
+                      {isMachine && (
+                        <Button size="sm" variant="outline" onClick={() => openPartsModal(product)}>
+                          Parts
+                        </Button>
+                      )}
                     </td>
                   </tr>
-                ))
+                  )
+                })
               )}
             </tbody>
           </table>
@@ -507,32 +678,138 @@ export default function ProductsPage() {
           <Button type="button" variant={activeTab === "categories" ? "default" : "outline"} onClick={() => setActiveTab("categories")}>Categories</Button>
         </div>
 
-        {activeTab === "categories" ? (
-          <div className="space-y-4">
-            <form onSubmit={submitCategory} className="rounded-lg border border-gray-200 bg-white p-5 space-y-3">
-              <div>
-                <Label>Category Name</Label>
-                <Input value={categoryName} onChange={(e) => setCategoryName(e.target.value)} />
-              </div>
-              <div className="flex justify-end">
-                <Button type="submit">Create Category</Button>
-              </div>
-            </form>
+        {/* Machine Parts Modal */}
+        {partsModalMachineId !== null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+              <h3 className="text-lg font-semibold text-gray-800">Machine Parts — {partsModalMachineName}</h3>
+              <p className="text-sm text-gray-500">Define the default parts list for this machine. These parts will auto-populate when a BOM is created.</p>
 
-            <div className="rounded-lg border border-gray-200 bg-white p-4">
-              <h2 className="text-sm font-semibold text-gray-700 mb-3">Existing Categories</h2>
-              <div className="space-y-2">
-                {categories.length === 0 ? (
-                  <p className="text-sm text-gray-500">No categories yet.</p>
-                ) : (
-                  categories.map((category) => (
-                    <div key={category.id} className="text-sm border rounded px-3 py-2">
-                      {category.category_name}
-                    </div>
-                  ))
-                )}
+              <div className="rounded-lg border border-gray-200 overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-700">
+                    <tr>
+                      <th className="px-3 py-2 text-left">#</th>
+                      <th className="px-3 py-2 text-left">Part Number</th>
+                      <th className="px-3 py-2 text-left">Part Name</th>
+                      <th className="px-3 py-2 text-left">Specification</th>
+                      <th className="px-3 py-2 text-left">Unit</th>
+                      <th className="px-3 py-2 text-left"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {machineParts.length === 0 ? (
+                      <tr><td className="px-3 py-3 text-gray-400" colSpan={7}>No parts yet. Click "+ Add Part" to begin.</td></tr>
+                    ) : (
+                      machineParts.map((part, idx) => (
+                        <tr key={idx} className="border-t">
+                          <td className="px-3 py-1 text-gray-500">{idx + 1}</td>
+                          <td className="px-3 py-1">
+                            <Input className="h-8 bg-gray-50" value={part.part_number || autoGeneratePartNumber(part.part_name, part.specification)} readOnly tabIndex={-1} placeholder="Auto" />
+                          </td>
+                          <td className="px-3 py-1">
+                            <Input className="h-8" value={part.part_name} onChange={(e) => updatePartField(idx, "part_name", e.target.value)} placeholder="Part name" required />
+                          </td>
+                          <td className="px-3 py-1">
+                            <Input className="h-8" value={part.specification} onChange={(e) => updatePartField(idx, "specification", e.target.value)} placeholder="1HP AC Motor" />
+                          </td>
+                          <td className="px-3 py-1">
+                            <Input className="h-8 w-20" value={part.unit} onChange={(e) => updatePartField(idx, "unit", e.target.value)} />
+                          </td>
+                          <td className="px-3 py-1">
+                            <Button size="sm" variant="destructive" onClick={() => removePartRow(idx)}>×</Button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex justify-between">
+                <Button type="button" variant="outline" onClick={addEmptyPart}>+ Add Part</Button>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" onClick={closePartsModal}>Cancel</Button>
+                  <Button type="button" onClick={saveParts} disabled={savingParts}>{savingParts ? "Saving..." : "Save Parts"}</Button>
+                </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {activeTab === "categories" ? (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-semibold text-gray-800">Categories</h2>
+              <Button onClick={() => openCategoryModal()}>+ New Category</Button>
+            </div>
+
+            <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 text-gray-700">
+                  <tr>
+                    <th className="px-4 py-2 text-left">#</th>
+                    <th className="px-4 py-2 text-left">Category Name</th>
+                    <th className="px-4 py-2 text-left">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categories.length === 0 ? (
+                    <tr><td className="px-4 py-3" colSpan={3}>No categories yet.</td></tr>
+                  ) : (
+                    categories.map((category, idx) => (
+                      <tr key={category.id} className="border-t">
+                        <td className="px-4 py-2">{idx + 1}</td>
+                        <td className="px-4 py-2">{category.category_name}</td>
+                        <td className="px-4 py-2 flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => openCategoryModal(category)}>Edit</Button>
+                          <Button size="sm" variant="destructive" onClick={() => setDeletingCategoryId(category.id)}>Delete</Button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Category Create/Edit Modal */}
+            {categoryModalOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6 space-y-4">
+                  <h3 className="text-lg font-semibold text-gray-800">{editingCategoryId ? "Edit Category" : "New Category"}</h3>
+                  <form onSubmit={submitCategory} className="space-y-4">
+                    <div>
+                      <Label>Category Name</Label>
+                      <Input
+                        value={categoryName}
+                        onChange={(e) => setCategoryName(e.target.value)}
+                        placeholder="Enter category name"
+                        autoFocus
+                        required
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button type="button" variant="outline" onClick={closeCategoryModal}>Cancel</Button>
+                      <Button type="submit">{editingCategoryId ? "Update Category" : "Create Category"}</Button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* Delete Confirmation Modal */}
+            {deletingCategoryId !== null && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6 space-y-4">
+                  <h3 className="text-lg font-semibold text-gray-800">Delete Category</h3>
+                  <p className="text-sm text-gray-600">Are you sure you want to delete this category? This cannot be undone if the category is not in use.</p>
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={() => setDeletingCategoryId(null)}>Cancel</Button>
+                    <Button type="button" variant="destructive" onClick={() => deleteCategory(deletingCategoryId)}>Delete</Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         ) : activeTab === "machines" ? (
           renderProductForm("machines")

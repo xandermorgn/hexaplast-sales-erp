@@ -7,7 +7,7 @@ let bootstrapPromise = null
 export async function initializeServerRuntime() {
   if (!bootstrapPromise) {
     bootstrapPromise = (async () => {
-      initDatabase()
+      await initDatabase()
       await ensureBootstrapMasterAdmin({ logCreated: true })
       ensureDefaultSystemSettings()
     })()

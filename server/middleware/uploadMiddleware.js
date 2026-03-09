@@ -8,6 +8,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import sharp from 'sharp';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,25 +33,8 @@ ensureDirectories();
 const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png'];
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
-// Storage configuration for profile photos
-const profilePhotoStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    ensureDirectories();
-    cb(null, PROFILE_PHOTOS_DIR);
-  },
-  filename: function (req, file, cb) {
-    // Use user ID from session to name the file
-    // This ensures each user has only one photo (overwrites previous)
-    const userId = req.user?.id;
-    if (!userId) {
-      return cb(new Error('User not authenticated'));
-    }
-    
-    const ext = path.extname(file.originalname).toLowerCase();
-    const filename = `user_${userId}${ext}`;
-    cb(null, filename);
-  }
-});
+// Memory storage so we can run sharp before writing to disk
+const profilePhotoMemStorage = multer.memoryStorage();
 
 // File filter for profile photos
 const profilePhotoFilter = (req, file, cb) => {
@@ -61,14 +45,51 @@ const profilePhotoFilter = (req, file, cb) => {
   }
 };
 
-// Multer instance for profile photos
-export const uploadProfilePhoto = multer({
-  storage: profilePhotoStorage,
+// Multer instance for profile photos (memory buffer)
+const uploadProfilePhotoRaw = multer({
+  storage: profilePhotoMemStorage,
   fileFilter: profilePhotoFilter,
   limits: {
     fileSize: MAX_FILE_SIZE
   }
 }).single('photo');
+
+/**
+ * Process uploaded profile photo through sharp:
+ * - Resize to max 512px (inside fit, maintain aspect ratio)
+ * - Convert to JPEG quality 90
+ * - Write to disk
+ * Sets req.file.filename after processing.
+ */
+export function uploadProfilePhoto(req, res, callback) {
+  uploadProfilePhotoRaw(req, res, async function (err) {
+    if (err) return callback(err);
+    if (!req.file) return callback(null); // no file provided
+
+    try {
+      ensureDirectories();
+      const userId = req.user?.id;
+      if (!userId) return callback(new Error('User not authenticated'));
+
+      const filename = `user_${userId}.jpg`;
+      const outputPath = path.join(PROFILE_PHOTOS_DIR, filename);
+
+      await sharp(req.file.buffer)
+        .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 90 })
+        .toFile(outputPath);
+
+      // Patch req.file so downstream code sees the saved file
+      req.file.filename = filename;
+      req.file.path = outputPath;
+
+      callback(null);
+    } catch (sharpErr) {
+      console.error('Sharp processing error:', sharpErr);
+      callback(new Error('Failed to process image'));
+    }
+  });
+}
 
 // Helper to get the relative path for storage in DB
 export function getProfilePhotoPath(filename) {

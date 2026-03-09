@@ -33,6 +33,8 @@ export function createInquiry(req, res) {
   try {
     const inquiry_number = generateNextInquiryNumber();
     const created_by = req.user?.id && req.user.id > 0 ? req.user.id : null;
+    // Auto-assign to the currently logged-in user
+    const assigned_to = created_by;
     const inputStatus = req.body?.status || 'open';
     assertValidStatus('inquiry', inputStatus, 'Invalid inquiry status');
 
@@ -72,7 +74,7 @@ export function createInquiry(req, res) {
         req.body?.designation || null,
         req.body?.gst_number || null,
         req.body?.address || null,
-        toNullableInt(req.body?.assigned_to),
+        assigned_to,
         req.body?.enquiry_source || null,
         req.body?.category || null,
         req.body?.industry || null,

@@ -79,9 +79,17 @@ export async function login(req, res) {
       'employee': 'Employee'
     };
 
+    // Look up designation for employees
+    let designation = null;
+    if (user.role === 'employee') {
+      const emp = get('SELECT designation FROM employees WHERE user_id = ?', [user.id]);
+      if (emp) designation = emp.designation;
+    }
+
     const response = {
       Login: user.login_id,
-      Role: roleMap[user.role] || user.role
+      Role: roleMap[user.role] || user.role,
+      Designation: designation
     };
 
     req.user = {
@@ -143,6 +151,13 @@ export function getCurrentUser(req, res) {
       'master_admin': 'Master Admin',
       'employee': 'Employee'
     };
+
+    // Look up designation for employees
+    let designation = null;
+    if (session.role === 'employee' && session.userId) {
+      const emp = get('SELECT designation FROM employees WHERE user_id = ?', [session.userId]);
+      if (emp) designation = emp.designation;
+    }
     
     return res.status(200).json({
       authenticated: true,
@@ -150,7 +165,8 @@ export function getCurrentUser(req, res) {
         loginId: session.loginId,
         name: session.name,
         role: session.role,
-        roleName: roleMap[session.role] || session.role
+        roleName: roleMap[session.role] || session.role,
+        designation
       }
     });
     

@@ -146,18 +146,25 @@ export function MyProfile() {
 
     try {
       setIsUploadingPhoto(true)
-      const formData = new FormData()
-      formData.append("photo", file)
+
+      // Read file as base64 data URI
+      const dataUri = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
 
       const response = await fetch(`/api/profile/photo`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: formData,
+        body: JSON.stringify({ photo_base64: dataUri }),
       })
 
       if (response.ok) {
-        // Re-fetch profile to get updated photo_path
-        await fetchProfile()
+        // Re-fetch profile and photo URI
+        await Promise.all([fetchProfile(), fetchPhotoUri()])
         toast({
           title: "Success",
           description: "Photo uploaded successfully",
@@ -194,6 +201,7 @@ export function MyProfile() {
       })
 
       if (response.ok) {
+        setPhotoDataUri(undefined)
         await fetchProfile()
         toast({
           title: "Success",
@@ -238,12 +246,26 @@ export function MyProfile() {
       .slice(0, 2)
   }
 
-  // Get full photo URL from backend path
-  const getPhotoUrl = (photoPath: string | null) => {
-    if (!photoPath) return undefined
-    if (photoPath.startsWith("/uploads/")) return `/api/serve-upload/${photoPath.slice(9)}`
-    return photoPath
+  const [photoDataUri, setPhotoDataUri] = useState<string | undefined>(undefined)
+
+  // Fetch photo data URI from database
+  const fetchPhotoUri = async () => {
+    try {
+      const res = await fetch(`/api/profile/photo`, { credentials: "include" })
+      if (res.ok) {
+        const data = await res.json()
+        setPhotoDataUri(data.photo_data_uri || undefined)
+      } else {
+        setPhotoDataUri(undefined)
+      }
+    } catch {
+      setPhotoDataUri(undefined)
+    }
   }
+
+  useEffect(() => {
+    fetchPhotoUri()
+  }, [])
 
   if (isLoading) {
     return (
@@ -290,7 +312,7 @@ export function MyProfile() {
         <div className="flex items-center space-x-4">
           <div className="relative">
             <Avatar className="h-20 w-20">
-              <AvatarImage src={getPhotoUrl(profile.photo_path)} alt={profile.display_name} />
+              <AvatarImage src={photoDataUri} alt={profile.display_name} style={{ objectFit: "cover", imageRendering: "auto" }} />
               <AvatarFallback className="bg-gradient-to-br from-orange-400 to-orange-600 text-white text-xl">
                 {getInitials(profile.display_name)}
               </AvatarFallback>
@@ -318,7 +340,7 @@ export function MyProfile() {
                 <Upload className="h-3 w-3 mr-1" />
                 {isUploadingPhoto ? "Uploading..." : "Upload Photo"}
               </Button>
-              {profile.photo_path && (
+              {photoDataUri && (
                 <Button
                   onClick={handleDeletePhoto}
                   variant="outline"

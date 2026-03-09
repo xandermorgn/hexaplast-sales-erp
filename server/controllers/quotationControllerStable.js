@@ -112,11 +112,17 @@ function getQuotationByIdWithRelations(id) {
   const items = query(
     `SELECT
       qi.*,
+      COALESCE(mpc.category_name, spc.category_name) AS category_name,
       CASE WHEN qi.product_type = 'machine' THEN mp.product_name ELSE sp.product_name END AS product_name,
-      CASE WHEN qi.product_type = 'machine' THEN mp.product_code ELSE sp.product_code END AS product_code
+      CASE WHEN qi.product_type = 'machine' THEN mp.product_code ELSE sp.product_code END AS product_code,
+      CASE WHEN qi.product_type = 'machine' THEN mp.model_number ELSE sp.model_number END AS model_number,
+      CASE WHEN qi.product_type = 'machine' THEN COALESCE(mp.hsn_code, mp.sac_code) ELSE COALESCE(sp.hsn_code, sp.sac_code) END AS hsn_sac_code,
+      'Nos' AS unit
     FROM quotation_items qi
     LEFT JOIN machine_products mp ON qi.product_type = 'machine' AND mp.id = qi.product_id
     LEFT JOIN spare_products sp ON qi.product_type = 'spare' AND sp.id = qi.product_id
+    LEFT JOIN product_categories mpc ON mpc.id = mp.category_id
+    LEFT JOIN product_categories spc ON spc.id = sp.category_id
     WHERE qi.quotation_id = ?
     ORDER BY qi.id ASC`,
     [id],

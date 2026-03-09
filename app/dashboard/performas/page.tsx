@@ -11,7 +11,10 @@ import { Textarea } from "@/components/ui/textarea"
 import { DateRangeFilter } from "@/components/ui/date-range-filter"
 import { useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
+import { useCategories } from "@/hooks/use-categories"
 import { apiUrl } from "@/lib/api"
+import { parseNum } from "@/lib/parse-number"
+import { FollowUpSection } from "@/components/follow-up-section"
 
 type Inquiry = {
   id: number
@@ -139,6 +142,7 @@ export default function PerformasPage() {
   const router = useRouter()
   const { user, isLoading, logout } = useAuth()
   const { toast } = useToast()
+  const { categoryMap } = useCategories()
 
   const [activeSection, setActiveSection] = useState("performas")
   const menuItems = [
@@ -147,6 +151,7 @@ export default function PerformasPage() {
     { id: "performas", label: "Performas" },
     { id: "work-orders", label: "Work Orders" },
     { id: "products", label: "Products" },
+    { id: "followups", label: "Follow Ups" },
   ]
 
   function handleSectionChange(section: string) {
@@ -156,6 +161,7 @@ export default function PerformasPage() {
       performas: "/dashboard/performas",
       "work-orders": "/dashboard/work-orders",
       products: "/dashboard/products",
+      followups: "/dashboard/followups",
     }
 
     const target = routeMap[section]
@@ -199,12 +205,12 @@ export default function PerformasPage() {
     let totalGst = 0
 
     for (const item of items) {
-      const qty = Math.max(1, Number(item.quantity) || 1)
-      const price = Number(item.price) || 0
+      const qty = Math.max(1, parseNum(item.quantity) || 1)
+      const price = parseNum(item.price)
       const base = qty * price
 
-      let discPercent = Number(item.discount_percent) || 0
-      let discAmount = Number(item.discount_amount) || 0
+      let discPercent = parseNum(item.discount_percent)
+      let discAmount = parseNum(item.discount_amount)
 
       if (discPercent > 0) {
         discAmount = (base * discPercent) / 100
@@ -215,7 +221,7 @@ export default function PerformasPage() {
       if (discAmount > base) discAmount = base
 
       const taxable = base - discAmount
-      const gstPercent = Number(item.gst_percent) || 0
+      const gstPercent = parseNum(item.gst_percent)
       const gstAmount = (taxable * gstPercent) / 100
 
       subtotal += base
@@ -276,11 +282,11 @@ export default function PerformasPage() {
       key: `machine-${product.id}`,
       product_type: "machine" as const,
       product_id: product.id,
-      label: `[Machine] ${product.product_name || "-"} (${product.product_code || "-"})`,
+      label: `${categoryMap.get(Number(product.category_id)) || product.category_name || "Uncategorized"} — ${product.product_name || "-"} (${product.product_code || "-"})`,
       sales_price: Number(product.sales_price) || 0,
       gst_percent: Number(product.gst_percent) || 0,
-      category_name: product.category || "",
-      sub_category: product.sub_category || "",
+      category_name: categoryMap.get(Number(product.category_id)) || product.category_name || "",
+      sub_category: categoryMap.get(Number(product.category_id)) || product.category_name || "",
       product_name: product.product_name || "",
       model_number: product.model_number || "",
       hsn_sac_code: product.hsn_sac_code || "",
@@ -291,11 +297,11 @@ export default function PerformasPage() {
       key: `spare-${product.id}`,
       product_type: "spare" as const,
       product_id: product.id,
-      label: `[Spare] ${product.product_name || "-"} (${product.product_code || "-"})`,
+      label: `${categoryMap.get(Number(product.category_id)) || product.category_name || "Uncategorized"} — ${product.product_name || "-"} (${product.product_code || "-"})`,
       sales_price: Number(product.sales_price) || 0,
       gst_percent: Number(product.gst_percent) || 0,
-      category_name: product.category || "",
-      sub_category: product.sub_category || "",
+      category_name: categoryMap.get(Number(product.category_id)) || product.category_name || "",
+      sub_category: categoryMap.get(Number(product.category_id)) || product.category_name || "",
       product_name: product.product_name || "",
       model_number: product.model_number || "",
       hsn_sac_code: product.hsn_sac_code || "",
@@ -407,11 +413,11 @@ export default function PerformasPage() {
         model_number: item.model_number,
         hsn_sac_code: item.hsn_sac_code,
         unit: item.unit,
-        quantity: Number(item.quantity) || 1,
-        price: Number(item.price) || 0,
-        discount_percent: Number(item.discount_percent) || 0,
-        discount_amount: Number(item.discount_amount) || 0,
-        gst_percent: Number(item.gst_percent) || 0,
+        quantity: parseNum(item.quantity) || 1,
+        price: parseNum(item.price),
+        discount_percent: parseNum(item.discount_percent),
+        discount_amount: parseNum(item.discount_amount),
+        gst_percent: parseNum(item.gst_percent),
       }))
 
     if (sanitizedItems.length === 0) {
@@ -421,7 +427,7 @@ export default function PerformasPage() {
 
     try {
       const payload = {
-        inquiry_id: Number(inquiryId),
+        inquiry_id: parseNum(inquiryId),
         terms_conditions: termsConditions,
         attention,
         declaration,
@@ -539,7 +545,7 @@ export default function PerformasPage() {
   }
 
   function printPerforma(id: number) {
-    window.open(`/dashboard/performas/print/${id}`, "_blank")
+    window.open(`/print/proforma/${id}`, "_blank", "noopener,noreferrer")
   }
 
   if (isLoading) {
@@ -603,6 +609,7 @@ export default function PerformasPage() {
         </div>
 
         {showForm && (
+        <>
         <form onSubmit={submitPerforma} className="rounded-lg border border-gray-200 bg-white p-5 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -652,13 +659,13 @@ export default function PerformasPage() {
                 </thead>
                 <tbody>
                   {items.map((item, index) => {
-                    const qty = Math.max(1, Number(item.quantity) || 1)
-                    const price = Number(item.price) || 0
+                    const qty = Math.max(1, parseNum(item.quantity) || 1)
+                    const price = parseNum(item.price)
                     const base = qty * price
-                    const discPercent = Number(item.discount_percent) || 0
-                    const discAmount = discPercent > 0 ? (base * discPercent) / 100 : Number(item.discount_amount) || 0
+                    const discPercent = parseNum(item.discount_percent)
+                    const discAmount = discPercent > 0 ? (base * discPercent) / 100 : parseNum(item.discount_amount)
                     const taxable = Math.max(0, base - Math.min(base, discAmount))
-                    const gstPercent = Number(item.gst_percent) || 0
+                    const gstPercent = parseNum(item.gst_percent)
                     const total = taxable + (taxable * gstPercent) / 100
 
                     return (
@@ -728,6 +735,11 @@ export default function PerformasPage() {
             <Button type="submit">{editingId ? "Update Performa" : "Save Performa"}</Button>
           </div>
         </form>
+
+        {editingId && (
+          <FollowUpSection entityType="performa" entityId={editingId} />
+        )}
+        </>
         )}
 
         {!showForm && (

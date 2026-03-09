@@ -105,7 +105,7 @@ export async function createEmployee(req, res) {
     const {
       login_id,
       password,
-      employee_id,
+      employee_id: explicit_employee_id,
       full_name,
       contact_number,
       email,
@@ -117,15 +117,23 @@ export async function createEmployee(req, res) {
     if (!login_id || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Login ID and password are required'
+        message: 'User ID and password are required'
       });
     }
 
-    // Validation: Required fields for EMPLOYEE creation
-    if (!employee_id || !full_name) {
+    if (!full_name) {
       return res.status(400).json({
         success: false,
-        message: 'Employee ID and full name are required'
+        message: 'Full name is required'
+      });
+    }
+
+    // Validate User ID format: lowercase, no spaces, 3-20 chars, alphanumeric + underscore
+    const userIdRegex = /^[a-z0-9_]{3,20}$/;
+    if (!userIdRegex.test(login_id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID must be 3-20 characters, lowercase, alphanumeric or underscore only, no spaces'
       });
     }
 
@@ -150,8 +158,22 @@ export async function createEmployee(req, res) {
     if (existingUser) {
       return res.status(409).json({
         success: false,
-        message: 'Login ID already exists'
+        message: 'User ID already exists'
       });
+    }
+
+    // Auto-generate employee_id if not provided
+    let employee_id = explicit_employee_id;
+    if (!employee_id) {
+      const lastRow = get(
+        `SELECT employee_id FROM employees WHERE employee_id LIKE 'EMP-%' ORDER BY CAST(SUBSTR(employee_id, 5) AS INTEGER) DESC LIMIT 1`
+      );
+      let nextNum = 1;
+      if (lastRow && lastRow.employee_id) {
+        const match = lastRow.employee_id.match(/^EMP-(\d+)$/);
+        if (match) nextNum = parseInt(match[1], 10) + 1;
+      }
+      employee_id = `EMP-${nextNum.toString().padStart(3, '0')}`;
     }
 
     // Check if employee_id already exists
@@ -208,7 +230,7 @@ export async function createEmployee(req, res) {
 
     // Fetch created employee with user info
     const newEmployee = get(
-      `SELECT e.*, u.login_id, u.role 
+      `SELECT e.*, u.login_id, u.role, u.created_at 
        FROM employees e 
        JOIN users u ON e.user_id = u.id 
        WHERE e.employee_id = ?`,
@@ -270,9 +292,13 @@ export function getAllEmployees(req, res) {
         e.*,
         u.login_id,
         u.name as user_name,
-        u.role
+        u.role,
+        u.created_at,
+        up.photo_data,
+        up.photo_mime
       FROM employees e
       LEFT JOIN users u ON e.user_id = u.id
+      LEFT JOIN user_profiles up ON up.user_id = e.user_id
       WHERE 1=1
     `;
     const params = [];
@@ -285,7 +311,19 @@ export function getAllEmployees(req, res) {
 
     sql += ' ORDER BY e.id DESC';
 
-    const employees = query(sql, params);
+    const rows = query(sql, params);
+
+    // Convert photo_data BLOBs to base64 data URIs for JSON transport
+    const employees = rows.map(row => {
+      let photo_data_uri = null;
+      if (row.photo_data) {
+        const base64 = Buffer.from(row.photo_data).toString('base64');
+        photo_data_uri = `data:${row.photo_mime || 'image/jpeg'};base64,${base64}`;
+      }
+      // Remove raw blob from response to keep payload clean
+      const { photo_data, ...rest } = row;
+      return { ...rest, photo_data_uri };
+    });
 
     return res.status(200).json({
       count: employees.length,

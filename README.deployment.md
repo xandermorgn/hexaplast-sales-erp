@@ -6,11 +6,10 @@
 
 ### Tech Stack
 - **Frontend**: Next.js 14 (App Router), TypeScript, TailwindCSS
-- **Backend**: Node.js, Express
+- **Backend**: Next.js API Routes (unified single process)
 - **Database**: SQLite (better-sqlite3)
 - **Authentication**: bcrypt, session-based (no JWT)
 - **Process Manager**: PM2
-- **Real-time**: Socket.IO
 
 ### Architecture Principles
 - Backend is the source of truth
@@ -35,7 +34,7 @@
 - Windows 10 (or Windows Server)
 - Minimum 4GB RAM
 - Network access for LAN deployment
-- Ports 3000 (frontend) and 4001 (backend) available
+- Port 3000 available
 
 ---
 
@@ -61,15 +60,9 @@ NODE_ENV=production
 
 Frontend must use only same-origin relative API paths (for example `/api/auth/login`).
 
-#### Backend (backend/.env)
-```bash
-cd backend
-copy .env.example .env
-```
-
-Edit `backend/.env` and set:
+#### Server Environment
+Set `SESSION_SECRET` in `.env`:
 ```env
-PORT=4001
 SESSION_SECRET=<generate-strong-random-string>
 NODE_ENV=production
 ```
@@ -78,16 +71,7 @@ NODE_ENV=production
 
 ### 3. Install Dependencies
 ```bash
-# From project root
 npm install
-cd backend
-npm install
-cd ..
-```
-
-Or use the convenience script:
-```bash
-npm run install:all
 ```
 
 ### 4. Build Frontend
@@ -127,14 +111,12 @@ git pull
 
 # 2. Install dependencies
 npm install
-cd backend && npm install && cd ..
 
-# 3. Build frontend
+# 3. Build
 npm run build
 
-# 4. Restart services
-pm2 restart hexaplast-erp-backend
-pm2 restart hexaplast-erp-frontend
+# 4. Restart service
+pm2 restart hexaplast-erp
 pm2 save
 ```
 
@@ -149,24 +131,13 @@ pm2 list
 
 ### View Logs
 ```bash
-# All logs
 pm2 logs
-
-# Backend only
-pm2 logs hexaplast-erp-backend
-
-# Frontend only
-pm2 logs hexaplast-erp-frontend
+pm2 logs hexaplast-erp
 ```
 
-### Restart Services
+### Restart Service
 ```bash
-# Restart all
-pm2 restart all
-
-# Restart specific service
-pm2 restart hexaplast-erp-backend
-pm2 restart hexaplast-erp-frontend
+pm2 restart hexaplast-erp
 ```
 
 ### Stop Services
@@ -186,18 +157,15 @@ pm2 monit
 ### LAN Access
 To allow other devices on the network to access the ERP:
 
-1. **Configure Frontend Environment**
-   - Do not set a frontend API base URL
-   - Frontend must call relative paths only (for example `/api/auth/login`)
-   - Next.js server rewrites `/api/*` internally to `http://127.0.0.1:4001/api/*`
+1. **Configure Environment**
+   - Frontend calls relative paths only (for example `/api/auth/login`)
+   - All API routes are handled by the same Next.js process
 
 2. **Windows Firewall**
-   - Allow inbound connections on ports 3000 and 4001
-   - Or disable firewall for private networks (not recommended for production)
+   - Allow inbound connections on port 3000
 
-3. **Access URLs**
-   - Frontend: `http://<server-ip>:3000`
-   - Backend API: `http://<server-ip>:4001`
+3. **Access URL**
+   - `http://<server-ip>:3000`
 
 ### Finding Server IP
 ```bash
@@ -210,20 +178,12 @@ Look for "IPv4 Address" under your active network adapter.
 ## Database Management
 
 ### Location
-SQLite database is created automatically in `backend/` directory.
+SQLite database is created automatically in `server/` directory.
 
 ### Backup
 ```bash
 # Create backup
-copy backend\hexaplast.db backend\backups\hexaplast_%date%.db
-
-# Or use automated backup script (create one)
-```
-
-### Seed Initial Data
-```bash
-cd backend
-npm run seed
+copy server\hexaplast.db backups\hexaplast_%date%.db
 ```
 
 ---
@@ -234,7 +194,6 @@ npm run seed
 ```bash
 # Find process using port
 netstat -ano | findstr :3000
-netstat -ano | findstr :4001
 
 # Kill process by PID
 taskkill /PID <pid> /F
@@ -257,17 +216,16 @@ npm run clean
 
 # Reinstall dependencies
 rmdir /s /q node_modules
-rmdir /s /q backend\node_modules
-npm run install:all
+npm install
 
 # Rebuild
 npm run build
 ```
 
 ### Session Issues
-- Ensure `SESSION_SECRET` is set in `backend/.env`
+- Ensure `SESSION_SECRET` is set in `.env`
 - Clear browser cookies
-- Restart backend: `pm2 restart hexaplast-erp-backend`
+- Restart: `pm2 restart hexaplast-erp`
 
 ---
 
@@ -295,8 +253,8 @@ pm2 set pm2-logrotate:retain 7
 
 ### Regular Backups
 Create a scheduled task to backup:
-- Database file (`backend/hexaplast.db`)
-- Uploads folder (`backend/uploads/`)
+- Database file (`server/hexaplast.db`)
+- Uploads folder (`server/uploads/`)
 - Environment files (`.env`)
 
 ### Updates
@@ -336,8 +294,7 @@ Optimized builds with PM2 process management.
 - `package.json` - Dependencies and scripts
 
 ### Logs Location
-- Frontend: `logs/pm2-frontend-*.log`
-- Backend: `backend/logs/pm2-*.log`
+- `logs/pm2-*.log`
 
 ### Common Commands
 ```bash
@@ -359,11 +316,12 @@ deploy.bat
 ## Architecture Notes
 
 ### API Configuration
-The system uses same-origin API calls only:
+The system uses a unified single-process architecture:
+- Frontend and API routes run in the same Next.js process on port 3000
 - Frontend requests use relative URLs (for example `/api/auth/login`)
 - `lib/api.ts` enforces relative path behavior
-- `next.config.mjs` rewrites `/api/:path*` to `http://127.0.0.1:4001/api/:path*`
-- No frontend hardcoded backend origin
+- All API routes live under `app/api/`
+- No separate backend server or proxy required
 
 ### Authentication Flow
 1. User logs in via `/api/auth/login`

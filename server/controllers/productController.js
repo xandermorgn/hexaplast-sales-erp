@@ -121,7 +121,8 @@ function toNullableInt(value) {
 
 function toNullableFloat(value) {
   if (value === undefined || value === null || value === '') return null;
-  const parsed = Number.parseFloat(String(value));
+  const cleaned = String(value).replace(/,/g, '');
+  const parsed = Number.parseFloat(cleaned);
   return Number.isNaN(parsed) ? null : parsed;
 }
 
@@ -159,6 +160,26 @@ function getNextProductCode(tableName, codePrefix) {
   const parsed = Number.parseInt(numericPart, 10);
   const next = Number.isNaN(parsed) ? 1 : parsed + 1;
   return `${codePrefix}${String(next).padStart(4, '0')}`;
+}
+
+function getNextModelNumber(tableName, prefix) {
+  const row = get(
+    `SELECT model_number
+     FROM ${tableName}
+     WHERE model_number LIKE ?
+     ORDER BY CAST(SUBSTR(model_number, ?) AS INTEGER) DESC
+     LIMIT 1`,
+    [`${prefix}%`, prefix.length + 1],
+  );
+
+  if (!row?.model_number) {
+    return `${prefix}0001`;
+  }
+
+  const numericPart = String(row.model_number).slice(prefix.length);
+  const parsed = Number.parseInt(numericPart, 10);
+  const next = Number.isNaN(parsed) ? 1 : parsed + 1;
+  return `${prefix}${String(next).padStart(4, '0')}`;
 }
 
 function getProductById(tableName, id) {
@@ -247,6 +268,140 @@ export function getCategories(req, res) {
   }
 }
 
+export function updateCategory(req, res) {
+  try {
+    if (!['master_admin', 'employee'].includes(req.user?.role)) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Access denied',
+      });
+    }
+
+    const categoryId = toNullableInt(req.params?.id);
+    const category_name = String(req.body?.category_name || '').trim();
+
+    if (!categoryId) {
+      return res.status(400).json({
+        error: 'Validation error',
+        message: 'Invalid category id',
+      });
+    }
+
+    if (!category_name) {
+      return res.status(400).json({
+        error: 'Validation error',
+        message: 'category_name is required',
+      });
+    }
+
+    const existing = get('SELECT * FROM product_categories WHERE id = ?', [categoryId]);
+    if (!existing) {
+      return res.status(404).json({
+        error: 'Not found',
+        message: 'Category not found',
+      });
+    }
+
+    run('UPDATE product_categories SET category_name = ? WHERE id = ?', [category_name, categoryId]);
+    const updated = get('SELECT * FROM product_categories WHERE id = ?', [categoryId]);
+
+    logAudit({
+      entity_type: ENTITY_TYPES.PRODUCT_CATEGORY || 'product_category',
+      entity_id: categoryId,
+      action: AUDIT_ACTIONS.UPDATE,
+      old_value: existing,
+      new_value: updated,
+      req,
+    });
+
+    return res.status(200).json({
+      success: true,
+      category: updated,
+    });
+  } catch (error) {
+    if (String(error?.message || '').toLowerCase().includes('unique')) {
+      return res.status(409).json({
+        error: 'Conflict',
+        message: 'Category already exists',
+      });
+    }
+
+    console.error('Update category error:', error);
+    return res.status(500).json({
+      error: 'Internal server error',
+      message: 'Failed to update category',
+    });
+  }
+}
+
+export function deleteCategory(req, res) {
+  try {
+    if (!['master_admin', 'employee'].includes(req.user?.role)) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Access denied',
+      });
+    }
+
+    const categoryId = toNullableInt(req.params?.id);
+    if (!categoryId) {
+      return res.status(400).json({
+        error: 'Validation error',
+        message: 'Invalid category id',
+      });
+    }
+
+    const existing = get('SELECT * FROM product_categories WHERE id = ?', [categoryId]);
+    if (!existing) {
+      return res.status(404).json({
+        error: 'Not found',
+        message: 'Category not found',
+      });
+    }
+
+    const inUse = get(
+      `SELECT 1 AS used
+       FROM machine_products
+       WHERE category_id = ? AND is_deleted = 0
+       UNION ALL
+       SELECT 1 AS used
+       FROM spare_products
+       WHERE category_id = ? AND is_deleted = 0
+       LIMIT 1`,
+      [categoryId, categoryId],
+    );
+
+    if (inUse) {
+      return res.status(409).json({
+        error: 'Conflict',
+        message: 'Cannot delete category because products use it.',
+      });
+    }
+
+    run('DELETE FROM product_categories WHERE id = ?', [categoryId]);
+
+    logAudit({
+      entity_type: ENTITY_TYPES.PRODUCT_CATEGORY || 'product_category',
+      entity_id: categoryId,
+      action: AUDIT_ACTIONS.DELETE,
+      old_value: existing,
+      new_value: null,
+      req,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Category deleted',
+    });
+  } catch (error) {
+    console.error('Delete category error:', error);
+    return res.status(500).json({
+      error: 'Internal server error',
+      message: 'Failed to delete category',
+    });
+  }
+}
+
 export function createProduct(req, res) {
   try {
     if (!["master_admin", "employee"].includes(req.user?.role)) {
@@ -260,6 +415,7 @@ export function createProduct(req, res) {
 
     const category_id = toNullableInt(req.body?.category_id);
     const categoryExists = validateCategory(category_id);
+    const productName = String(req.body?.product_name || '').trim();
 
     if (!categoryExists) {
       return res.status(400).json({
@@ -268,7 +424,16 @@ export function createProduct(req, res) {
       });
     }
 
+    if (!productName) {
+      return res.status(400).json({
+        error: 'Validation error',
+        message: 'product_name is required',
+      });
+    }
+
     const product_code = getNextProductCode(tableName, codePrefix);
+    const modelPrefix = req.productType === 'spare' ? 'SPM-' : 'MCM-';
+    const model_number = String(req.body?.model_number || '').trim() || getNextModelNumber(tableName, modelPrefix);
     const image_path = req.file ? `/uploads/product_images/${req.file.filename}` : null;
 
     run(
@@ -292,8 +457,8 @@ export function createProduct(req, res) {
       [
         categoryExists,
         req.user?.id || null,
-        req.body?.product_name || null,
-        req.body?.model_number || null,
+        productName,
+        model_number,
         product_code,
         toNullableFloat(req.body?.sales_price),
         toNullableFloat(req.body?.purchase_price),

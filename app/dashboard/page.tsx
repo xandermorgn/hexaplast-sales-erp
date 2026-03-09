@@ -22,7 +22,11 @@ export default function DashboardPage() {
     }
 
     if (user?.role === "employee") {
-      router.replace("/dashboard/inquiries")
+      if (user.designation === "Purchase Employee") {
+        router.replace("/dashboard/purchase/pending-work-orders")
+      } else {
+        router.replace("/dashboard/inquiries")
+      }
       return
     }
 

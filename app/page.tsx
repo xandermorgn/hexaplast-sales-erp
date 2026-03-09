@@ -51,17 +51,22 @@ export default function LoginPage() {
         return
       }
 
-      const { Login, Role } = data
+      const { Login, Role, Designation } = data
 
       sessionStorage.setItem("loginId", Login || loginId)
       sessionStorage.setItem("role", Role)
+      if (Designation) sessionStorage.setItem("designation", Designation)
 
       if (Role === "Server Admin") {
         router.push("/dashboard/server-admin")
       } else if (Role === "Master Admin") {
         router.push("/dashboard/master-admin")
       } else if (Role === "Employee") {
-        router.push("/dashboard/inquiries")
+        if (Designation === "Purchase Employee") {
+          router.push("/dashboard/purchase/pending-work-orders")
+        } else {
+          router.push("/dashboard/inquiries")
+        }
       } else {
         setError("Unknown role. Please contact administrator.")
       }

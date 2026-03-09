@@ -11,7 +11,10 @@ import { Textarea } from "@/components/ui/textarea"
 import { DateRangeFilter } from "@/components/ui/date-range-filter"
 import { useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
+import { useCategories } from "@/hooks/use-categories"
 import { apiUrl } from "@/lib/api"
+import { parseNum } from "@/lib/parse-number"
+import { FollowUpSection } from "@/components/follow-up-section"
 
 type Inquiry = {
   id: number
@@ -134,7 +137,7 @@ const emptyItem = (): WOItemForm => ({
   price: "0",
   discount_percent: "0",
   discount_amount: "0",
-  gst_percent: "0",
+  gst_percent: "18",
 })
 
 const round2 = (v: number) => Math.round(v * 100) / 100
@@ -143,6 +146,7 @@ export default function WorkOrdersPage() {
   const router = useRouter()
   const { user, isLoading, logout } = useAuth()
   const { toast } = useToast()
+  const { categoryMap } = useCategories()
 
   const [activeSection, setActiveSection] = useState("work-orders")
   const menuItems = [
@@ -151,6 +155,7 @@ export default function WorkOrdersPage() {
     { id: "performas", label: "Performas" },
     { id: "work-orders", label: "Work Orders" },
     { id: "products", label: "Products" },
+    { id: "followups", label: "Follow Ups" },
   ]
 
   function handleSectionChange(section: string) {
@@ -160,6 +165,7 @@ export default function WorkOrdersPage() {
       performas: "/dashboard/performas",
       "work-orders": "/dashboard/work-orders",
       products: "/dashboard/products",
+      followups: "/dashboard/followups",
     }
 
     const target = routeMap[section]
@@ -183,7 +189,7 @@ export default function WorkOrdersPage() {
 
   // Extra detail fields
   const [workOrderDate, setWorkOrderDate] = useState("")
-  const [calibrationNabl, setCalibrationNabl] = useState("")
+  const [calibrationNabl, setCalibrationNabl] = useState("NO")
   const [packing, setPacking] = useState("")
   const [deliveryDate, setDeliveryDate] = useState("")
   const [remarks, setRemarks] = useState("")
@@ -211,12 +217,12 @@ export default function WorkOrdersPage() {
     let totalGst = 0
 
     for (const item of items) {
-      const qty = Math.max(1, Number(item.quantity) || 1)
-      const price = Number(item.price) || 0
+      const qty = Math.max(1, parseNum(item.quantity) || 1)
+      const price = parseNum(item.price)
       const base = qty * price
 
-      let discPercent = Number(item.discount_percent) || 0
-      let discAmount = Number(item.discount_amount) || 0
+      let discPercent = parseNum(item.discount_percent)
+      let discAmount = parseNum(item.discount_amount)
 
       if (discPercent > 0) {
         discAmount = (base * discPercent) / 100
@@ -227,7 +233,7 @@ export default function WorkOrdersPage() {
       if (discAmount > base) discAmount = base
 
       const taxable = base - discAmount
-      const gstPercent = Number(item.gst_percent) || 0
+      const gstPercent = parseNum(item.gst_percent)
       const gstAmount = applyGst ? (taxable * gstPercent) / 100 : 0
 
       subtotal += base
@@ -235,13 +241,21 @@ export default function WorkOrdersPage() {
       totalGst += gstAmount
     }
 
+    // Include extra charges in total
+    const ec1 = parseNum(extraCharge1)
+    const ec2 = parseNum(extraCharge2)
+    const ecGstPct = parseNum(extraChargeGstPercent)
+    const extraChargesSubtotal = ec1 + ec2
+    const extraChargesGst = applyGst ? (extraChargesSubtotal * ecGstPct) / 100 : 0
+
     return {
       subtotal: round2(subtotal),
       totalDiscount: round2(totalDiscount),
-      totalGst: round2(totalGst),
-      totalAmount: round2(subtotal - totalDiscount + totalGst),
+      totalGst: round2(totalGst + extraChargesGst),
+      extraCharges: round2(extraChargesSubtotal),
+      totalAmount: round2(subtotal - totalDiscount + totalGst + extraChargesSubtotal + extraChargesGst),
     }
-  }, [items, applyGst])
+  }, [items, applyGst, extraCharge1, extraCharge2, extraChargeGstPercent])
 
   const filteredWorkOrders = useMemo(() => {
     return workOrders.filter((wo) => {
@@ -286,11 +300,11 @@ export default function WorkOrdersPage() {
       key: `machine-${p.id}`,
       product_type: "machine" as const,
       product_id: p.id,
-      label: `[Machine] ${p.product_name || "-"} (${p.product_code || "-"})`,
+      label: `${categoryMap.get(Number(p.category_id)) || p.category_name || "Uncategorized"} — ${p.product_name || "-"} (${p.product_code || "-"})`,
       sales_price: Number(p.sales_price) || 0,
       gst_percent: Number(p.gst_percent) || 0,
-      category_name: p.category || "",
-      sub_category: p.sub_category || "",
+      category_name: categoryMap.get(Number(p.category_id)) || p.category_name || "",
+      sub_category: categoryMap.get(Number(p.category_id)) || p.category_name || "",
       product_name: p.product_name || "",
       model_number: p.model_number || "",
       hsn_sac_code: p.hsn_sac_code || "",
@@ -301,11 +315,11 @@ export default function WorkOrdersPage() {
       key: `spare-${p.id}`,
       product_type: "spare" as const,
       product_id: p.id,
-      label: `[Spare] ${p.product_name || "-"} (${p.product_code || "-"})`,
+      label: `${categoryMap.get(Number(p.category_id)) || p.category_name || "Uncategorized"} — ${p.product_name || "-"} (${p.product_code || "-"})`,
       sales_price: Number(p.sales_price) || 0,
       gst_percent: Number(p.gst_percent) || 0,
-      category_name: p.category || "",
-      sub_category: p.sub_category || "",
+      category_name: categoryMap.get(Number(p.category_id)) || p.category_name || "",
+      sub_category: categoryMap.get(Number(p.category_id)) || p.category_name || "",
       product_name: p.product_name || "",
       model_number: p.model_number || "",
       hsn_sac_code: p.hsn_sac_code || "",
@@ -340,7 +354,7 @@ export default function WorkOrdersPage() {
     setInquiryId("")
     setItems([emptyItem()])
     setWorkOrderDate("")
-    setCalibrationNabl("")
+    setCalibrationNabl("NO")
     setPacking("")
     setDeliveryDate("")
     setRemarks("")
@@ -356,6 +370,9 @@ export default function WorkOrdersPage() {
 
   function openCreateForm() {
     resetForm()
+    // Auto-set work order date to today
+    const today = new Date().toISOString().split("T")[0]
+    setWorkOrderDate(today)
     setShowForm(true)
   }
 
@@ -404,11 +421,11 @@ export default function WorkOrdersPage() {
         model_number: item.model_number,
         hsn_sac_code: item.hsn_sac_code,
         unit: item.unit,
-        quantity: Number(item.quantity) || 1,
-        price: Number(item.price) || 0,
-        discount_percent: Number(item.discount_percent) || 0,
-        discount_amount: Number(item.discount_amount) || 0,
-        gst_percent: Number(item.gst_percent) || 0,
+        quantity: parseNum(item.quantity) || 1,
+        price: parseNum(item.price),
+        discount_percent: parseNum(item.discount_percent),
+        discount_amount: parseNum(item.discount_amount),
+        gst_percent: parseNum(item.gst_percent),
       }))
 
     if (sanitizedItems.length === 0) {
@@ -418,7 +435,7 @@ export default function WorkOrdersPage() {
 
     try {
       const payload = {
-        inquiry_id: Number(inquiryId),
+        inquiry_id: parseNum(inquiryId),
         items: sanitizedItems,
         work_order_date: workOrderDate || null,
         calibration_nabl: calibrationNabl || null,
@@ -426,13 +443,13 @@ export default function WorkOrdersPage() {
         delivery_date: deliveryDate || null,
         remarks: remarks || null,
         apply_gst: applyGst,
-        extra_charge_gst_percent: Number(extraChargeGstPercent) || 0,
-        extra_charge_1: Number(extraCharge1) || 0,
-        extra_charge_2: Number(extraCharge2) || 0,
+        extra_charge_gst_percent: parseNum(extraChargeGstPercent),
+        extra_charge_1: parseNum(extraCharge1),
+        extra_charge_2: parseNum(extraCharge2),
         advance_display: advanceDisplay,
         advance_date: advanceDate || null,
         advance_description: advanceDescription || null,
-        advance_amount: Number(advanceAmount) || 0,
+        advance_amount: parseNum(advanceAmount),
       }
 
       const isUpdate = Boolean(editingId)
@@ -470,7 +487,7 @@ export default function WorkOrdersPage() {
       setEditingId(wo.id)
       setInquiryId(wo.inquiry_id ? String(wo.inquiry_id) : "")
       setWorkOrderDate(wo.work_order_date || "")
-      setCalibrationNabl(wo.calibration_nabl || "")
+      setCalibrationNabl(wo.calibration_nabl === "YES" || wo.calibration_nabl === "true" || wo.calibration_nabl === true as any ? "YES" : "NO")
       setPacking(wo.packing || "")
       setDeliveryDate(wo.delivery_date || "")
       setRemarks(wo.remarks || "")
@@ -533,7 +550,7 @@ export default function WorkOrdersPage() {
   }
 
   function printWorkOrder(id: number) {
-    window.open(`/dashboard/work-orders/print/${id}`, "_blank")
+    window.open(`/print/workorder/${id}`, "_blank", "noopener,noreferrer")
   }
 
   if (isLoading) {
@@ -597,6 +614,7 @@ export default function WorkOrdersPage() {
         </div>
 
         {showForm && (
+        <>
         <form onSubmit={submitWorkOrder} className="rounded-lg border border-gray-200 bg-white p-5 space-y-4">
           {/* Customer Inquiry Selector */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -618,7 +636,7 @@ export default function WorkOrdersPage() {
             </div>
             <div>
               <Label>Work Order Date</Label>
-              <Input type="date" value={workOrderDate} onChange={(e) => setWorkOrderDate(e.target.value)} />
+              <Input type="date" value={workOrderDate} readOnly className="bg-gray-50 cursor-not-allowed" />
             </div>
           </div>
 
@@ -634,7 +652,18 @@ export default function WorkOrdersPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <Label>Calibration / NABL</Label>
-              <Input value={calibrationNabl} onChange={(e) => setCalibrationNabl(e.target.value)} placeholder="e.g. NABL Certified" />
+              <div className="flex items-center gap-3 mt-1">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={calibrationNabl === "YES"}
+                  onClick={() => setCalibrationNabl(calibrationNabl === "YES" ? "NO" : "YES")}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${calibrationNabl === "YES" ? "bg-green-500" : "bg-gray-300"}`}
+                >
+                  <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform ${calibrationNabl === "YES" ? "translate-x-5" : "translate-x-0"}`} />
+                </button>
+                <span className="text-sm font-medium">{calibrationNabl === "YES" ? "YES" : "NO"}</span>
+              </div>
             </div>
             <div>
               <Label>Packing</Label>
@@ -669,13 +698,13 @@ export default function WorkOrdersPage() {
                 </thead>
                 <tbody>
                   {items.map((item, index) => {
-                    const qty = Math.max(1, Number(item.quantity) || 1)
-                    const price = Number(item.price) || 0
+                    const qty = Math.max(1, parseNum(item.quantity) || 1)
+                    const price = parseNum(item.price)
                     const base = qty * price
-                    const discPercent = Number(item.discount_percent) || 0
-                    const discAmount = discPercent > 0 ? (base * discPercent) / 100 : Number(item.discount_amount) || 0
+                    const discPercent = parseNum(item.discount_percent)
+                    const discAmount = discPercent > 0 ? (base * discPercent) / 100 : parseNum(item.discount_amount)
                     const taxable = Math.max(0, base - Math.min(base, discAmount))
-                    const gstPercent = Number(item.gst_percent) || 0
+                    const gstPercent = parseNum(item.gst_percent)
                     const total = taxable + (applyGst ? (taxable * gstPercent) / 100 : 0)
 
                     return (
@@ -773,13 +802,19 @@ export default function WorkOrdersPage() {
             <div><span className="font-medium">Subtotal:</span> {summary.subtotal.toFixed(2)}</div>
             <div><span className="font-medium">Discount:</span> {summary.totalDiscount.toFixed(2)}</div>
             <div><span className="font-medium">GST:</span> {summary.totalGst.toFixed(2)}</div>
-            <div><span className="font-medium">Total:</span> {summary.totalAmount.toFixed(2)}</div>
+            <div><span className="font-medium">Extra Charges:</span> {summary.extraCharges.toFixed(2)}</div>
+            <div className="col-span-full md:col-span-1"><span className="font-medium">Total:</span> {summary.totalAmount.toFixed(2)}</div>
           </div>
 
           <div className="flex justify-end">
             <Button type="submit">{editingId ? "Update Work Order" : "Save Work Order"}</Button>
           </div>
         </form>
+
+        {editingId && (
+          <FollowUpSection entityType="workorder" entityId={editingId} />
+        )}
+        </>
         )}
 
         {!showForm && (

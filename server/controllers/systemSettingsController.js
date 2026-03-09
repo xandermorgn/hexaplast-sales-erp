@@ -2,6 +2,7 @@ import { logAudit, AUDIT_ACTIONS, ENTITY_TYPES } from '../utils/auditLogger.js';
 import {
   ensureDefaultSystemSettings,
   getDefaultDocumentSettings,
+  getCompanySettings,
   getSystemSettingsByKeys,
   SYSTEM_SETTING_KEYS,
 } from '../utils/systemSettings.js';
@@ -17,6 +18,20 @@ const DOCUMENT_SETTING_KEYS = [
 function normalizeText(value) {
   if (value === undefined || value === null) return '';
   return String(value).trim();
+}
+
+export function getPrintSettings(req, res) {
+  try {
+    ensureDefaultSystemSettings();
+    const company = getCompanySettings();
+    return res.status(200).json({ success: true, company });
+  } catch (error) {
+    console.error('Get print settings error:', error);
+    return res.status(500).json({
+      error: 'Internal server error',
+      message: 'Failed to fetch print settings',
+    });
+  }
 }
 
 export function getDocumentDefaultSettings(req, res) {

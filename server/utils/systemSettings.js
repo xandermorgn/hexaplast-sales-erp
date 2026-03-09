@@ -5,6 +5,10 @@ export const SYSTEM_SETTING_KEYS = {
   DEFAULT_ATTENTION: 'default_attention',
   DEFAULT_DECLARATION: 'default_declaration',
   DEFAULT_SPECIAL_NOTES: 'default_special_notes',
+  COMPANY_NAME: 'company_name',
+  COMPANY_ADDRESS: 'company_address',
+  COMPANY_PHONE: 'company_phone',
+  COMPANY_EMAIL: 'company_email',
 };
 
 export const DEFAULT_SYSTEM_SETTINGS = {
@@ -12,6 +16,10 @@ export const DEFAULT_SYSTEM_SETTINGS = {
   [SYSTEM_SETTING_KEYS.DEFAULT_ATTENTION]: '',
   [SYSTEM_SETTING_KEYS.DEFAULT_DECLARATION]: '',
   [SYSTEM_SETTING_KEYS.DEFAULT_SPECIAL_NOTES]: '',
+  [SYSTEM_SETTING_KEYS.COMPANY_NAME]: 'Hexaplast',
+  [SYSTEM_SETTING_KEYS.COMPANY_ADDRESS]: '',
+  [SYSTEM_SETTING_KEYS.COMPANY_PHONE]: '',
+  [SYSTEM_SETTING_KEYS.COMPANY_EMAIL]: '',
 };
 
 export function ensureDefaultSystemSettings() {
@@ -56,5 +64,23 @@ export function getDefaultDocumentSettings() {
     attention: values[SYSTEM_SETTING_KEYS.DEFAULT_ATTENTION] || '',
     declaration: values[SYSTEM_SETTING_KEYS.DEFAULT_DECLARATION] || '',
     special_notes: values[SYSTEM_SETTING_KEYS.DEFAULT_SPECIAL_NOTES] || '',
+  };
+}
+
+export function getCompanySettings() {
+  const keys = [
+    SYSTEM_SETTING_KEYS.COMPANY_NAME,
+    SYSTEM_SETTING_KEYS.COMPANY_ADDRESS,
+    SYSTEM_SETTING_KEYS.COMPANY_PHONE,
+    SYSTEM_SETTING_KEYS.COMPANY_EMAIL,
+  ];
+
+  const values = getSystemSettingsByKeys(keys);
+
+  return {
+    company_name: values[SYSTEM_SETTING_KEYS.COMPANY_NAME] || 'Hexaplast',
+    company_address: values[SYSTEM_SETTING_KEYS.COMPANY_ADDRESS] || '',
+    company_phone: values[SYSTEM_SETTING_KEYS.COMPANY_PHONE] || '',
+    company_email: values[SYSTEM_SETTING_KEYS.COMPANY_EMAIL] || '',
   };
 }

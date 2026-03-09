@@ -8,6 +8,7 @@ interface User {
   name: string
   role: string
   roleName: string
+  designation?: string | null
 }
 
 interface AuthState {
