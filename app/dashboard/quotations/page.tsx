@@ -217,6 +217,7 @@ export default function QuotationsPage() {
   const [quotations, setQuotations] = useState<QuotationRow[]>([])
   const [showForm, setShowForm] = useState(false)
   const [filters, setFilters] = useState({ from_date: "", to_date: "" })
+  const [formError, setFormError] = useState("")
 
   const [editingId, setEditingId] = useState<number | null>(null)
   const [savedQuotation, setSavedQuotation] = useState<QuotationDetail | null>(null)
@@ -421,9 +422,10 @@ export default function QuotationsPage() {
 
   async function submitQuotation(event: FormEvent) {
     event.preventDefault()
+    setFormError("")
 
     if (!inquiryId) {
-      toast({ title: "Validation", description: "Please choose inquiry", variant: "destructive" })
+      setFormError("Please choose an inquiry before saving.")
       return
     }
 
@@ -440,7 +442,7 @@ export default function QuotationsPage() {
       }))
 
     if (sanitizedItems.length === 0) {
-      toast({ title: "Validation", description: "Please add at least one product", variant: "destructive" })
+      setFormError("Please add at least one product.")
       return
     }
 
@@ -465,7 +467,8 @@ export default function QuotationsPage() {
 
       const data = await response.json()
       if (!response.ok) {
-        throw new Error(data?.message || "Failed to save quotation")
+        setFormError(data?.message || "Failed to save quotation")
+        return
       }
 
       const detail = data.quotation as QuotationDetail
@@ -476,11 +479,7 @@ export default function QuotationsPage() {
       await fetchQuotations()
       setShowForm(false)
     } catch (error) {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to save quotation",
-        variant: "destructive",
-      })
+      setFormError(error instanceof Error ? error.message : "Failed to save quotation")
     }
   }
 
@@ -633,6 +632,11 @@ export default function QuotationsPage() {
         {showForm && (
         <>
         <form onSubmit={submitQuotation} className="rounded-lg border border-gray-200 bg-white p-5 space-y-4">
+          {formError && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+              {formError}
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label>Company Name - Inquiry Number</Label>

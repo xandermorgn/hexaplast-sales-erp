@@ -21,6 +21,15 @@ function isStrongPassword(password) {
   return true;
 }
 
+function getPasswordErrors(password) {
+  const errors = [];
+  if (typeof password !== 'string' || password.length < 8) errors.push('At least 8 characters');
+  if (typeof password === 'string' && !/[a-z]/.test(password)) errors.push('One lowercase letter');
+  if (typeof password === 'string' && !/[A-Z]/.test(password)) errors.push('One uppercase letter');
+  if (typeof password === 'string' && !/[0-9]/.test(password)) errors.push('One number');
+  return errors;
+}
+
 /**
  * Generate next Employee ID
  * GET /api/employees/next-id
@@ -117,13 +126,15 @@ export async function createEmployee(req, res) {
     if (!login_id || !password) {
       return res.status(400).json({
         success: false,
-        message: 'User ID and password are required'
+        field: !login_id ? 'login_id' : 'password',
+        message: !login_id ? 'User ID is required' : 'Password is required'
       });
     }
 
     if (!full_name) {
       return res.status(400).json({
         success: false,
+        field: 'full_name',
         message: 'Full name is required'
       });
     }
@@ -131,17 +142,26 @@ export async function createEmployee(req, res) {
     // Validate User ID format: lowercase, no spaces, 3-20 chars, alphanumeric + underscore
     const userIdRegex = /^[a-z0-9_]{3,20}$/;
     if (!userIdRegex.test(login_id)) {
+      const idErrors = [];
+      if (login_id.length < 3) idErrors.push('minimum 3 characters');
+      if (login_id.length > 20) idErrors.push('maximum 20 characters');
+      if (/[A-Z]/.test(login_id)) idErrors.push('lowercase only');
+      if (/\s/.test(login_id)) idErrors.push('no spaces');
+      if (/[^a-z0-9_]/.test(login_id.toLowerCase())) idErrors.push('letters, numbers, and underscore only');
       return res.status(400).json({
         success: false,
-        message: 'User ID must be 3-20 characters, lowercase, alphanumeric or underscore only, no spaces'
+        field: 'login_id',
+        message: 'User ID is invalid: ' + (idErrors.length ? idErrors.join(', ') : 'must be 3-20 lowercase alphanumeric characters')
       });
     }
 
     // Validate password strength
     if (!isStrongPassword(password)) {
+      const missing = getPasswordErrors(password);
       return res.status(400).json({
         success: false,
-        message: 'Password must be at least 8 characters and include uppercase, lowercase, and a digit'
+        field: 'password',
+        message: 'Password does not meet requirements: ' + missing.join(', ')
       });
     }
 
@@ -158,7 +178,8 @@ export async function createEmployee(req, res) {
     if (existingUser) {
       return res.status(409).json({
         success: false,
-        message: 'User ID already exists'
+        field: 'login_id',
+        message: 'User ID "' + login_id + '" already exists. Please choose a different User ID.'
       });
     }
 
@@ -181,7 +202,8 @@ export async function createEmployee(req, res) {
     if (existingEmployee) {
       return res.status(409).json({
         success: false,
-        message: 'Employee ID already exists'
+        field: 'employee_id',
+        message: 'Employee ID "' + employee_id + '" already exists'
       });
     }
 

@@ -105,6 +105,7 @@ export default function ProductsPage() {
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null)
   const [deletingCategoryId, setDeletingCategoryId] = useState<number | null>(null)
   const { currencies: currencyOptions } = useGeoCurrencies()
+  const [productFormError, setProductFormError] = useState("")
 
   // Machine Parts state
   const [partsModalMachineId, setPartsModalMachineId] = useState<number | null>(null)
@@ -207,26 +208,19 @@ export default function ProductsPage() {
 
   async function submitProduct(kind: "machines" | "spares", event: FormEvent) {
     event.preventDefault()
+    setProductFormError("")
 
     const isMachine = kind === "machines"
     const form = isMachine ? machineForm : spareForm
     const editId = isMachine ? machineEditId : spareEditId
 
     if (!form.category_id) {
-      toast({
-        title: "Validation",
-        description: "Please choose a category",
-        variant: "destructive",
-      })
+      setProductFormError("Please choose a category.")
       return
     }
 
     if (!form.product_name.trim()) {
-      toast({
-        title: "Validation",
-        description: "Product name is required",
-        variant: "destructive",
-      })
+      setProductFormError("Product name is required.")
       return
     }
 
@@ -247,7 +241,8 @@ export default function ProductsPage() {
         : { message: await response.text() }
 
       if (!response.ok) {
-        throw new Error(data?.message || `Failed to save ${kind}`)
+        setProductFormError(data?.message || `Failed to save ${kind}`)
+        return
       }
 
       toast({
@@ -263,13 +258,10 @@ export default function ProductsPage() {
         setSpareEditId(null)
       }
 
+      setProductFormError("")
       await fetchProducts(kind)
     } catch (error) {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to save product",
-        variant: "destructive",
-      })
+      setProductFormError(error instanceof Error ? error.message : "Failed to save product")
     }
   }
 
@@ -478,6 +470,11 @@ export default function ProductsPage() {
     return (
       <div className="space-y-5">
         <form onSubmit={(event) => submitProduct(kind, event)} className="rounded-lg border border-gray-200 bg-white p-5 space-y-4">
+          {productFormError && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+              {productFormError}
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <Label>Category</Label>

@@ -96,6 +96,7 @@ export default function ServerAdminPage() {
   const [showCreateMasterAdminForm, setShowCreateMasterAdminForm] = useState(false)
   const [newMasterAdmin, setNewMasterAdmin] = useState({ name: "", login_id: "", password: "" })
   const [savingMasterAdmin, setSavingMasterAdmin] = useState(false)
+  const [masterAdminFormError, setMasterAdminFormError] = useState("")
 
   async function fetchMasterAdmins() {
     const response = await fetch(apiUrl("/api/users/master-admins"), { credentials: "include" })
@@ -160,6 +161,7 @@ export default function ServerAdminPage() {
 
   async function handleCreateMasterAdmin(event: FormEvent) {
     event.preventDefault()
+    setMasterAdminFormError("")
     setSavingMasterAdmin(true)
 
     try {
@@ -171,18 +173,18 @@ export default function ServerAdminPage() {
       })
 
       const data = await response.json()
-      if (!response.ok) throw new Error(data?.message || "Failed to create master admin")
+      if (!response.ok) {
+        setMasterAdminFormError(data?.message || "Failed to create master admin")
+        return
+      }
 
       toast({ title: "Success", description: "Master admin created" })
       setNewMasterAdmin({ name: "", login_id: "", password: "" })
+      setMasterAdminFormError("")
       setShowCreateMasterAdminForm(false)
       await fetchMasterAdmins()
     } catch (error) {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create master admin",
-        variant: "destructive",
-      })
+      setMasterAdminFormError(error instanceof Error ? error.message : "Failed to create master admin")
     } finally {
       setSavingMasterAdmin(false)
     }
@@ -253,6 +255,11 @@ export default function ServerAdminPage() {
 
             {showCreateMasterAdminForm && (
               <form onSubmit={handleCreateMasterAdmin} className="rounded-lg border border-gray-200 bg-white p-5 space-y-4">
+                {masterAdminFormError && (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                    {masterAdminFormError}
+                  </div>
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <Label>Name</Label>

@@ -116,6 +116,8 @@ export default function MasterAdminPage() {
   const [savingTerms, setSavingTerms] = useState(false)
   const [fireConfirm, setFireConfirm] = useState<{ open: boolean; employee: Employee | null }>({ open: false, employee: null })
   const [firingEmployee, setFiringEmployee] = useState(false)
+  const [employeeError, setEmployeeError] = useState("")
+  const [employeeFieldError, setEmployeeFieldError] = useState("")
 
   async function fetchEmployees() {
     const response = await fetch(apiUrl("/api/employees"), { credentials: "include" })
@@ -199,12 +201,16 @@ export default function MasterAdminPage() {
   function openEmployeeModal() {
     setEmployeeForm({ login_id: "", password: "", full_name: "", contact_number: "", email: "", designation: "Sales Employee" })
     setShowPassword(false)
+    setEmployeeError("")
+    setEmployeeFieldError("")
     setEmployeeModalOpen(true)
   }
 
   function closeEmployeeModal() {
     setEmployeeModalOpen(false)
     setShowPassword(false)
+    setEmployeeError("")
+    setEmployeeFieldError("")
   }
 
   async function handleFireEmployee() {
@@ -233,6 +239,26 @@ export default function MasterAdminPage() {
 
   async function handleCreateEmployee(event: FormEvent) {
     event.preventDefault()
+    setEmployeeError("")
+    setEmployeeFieldError("")
+
+    // Client-side validation
+    if (!employeeForm.login_id.trim()) {
+      setEmployeeFieldError("login_id")
+      setEmployeeError("User ID is required")
+      return
+    }
+    if (!employeeForm.full_name.trim()) {
+      setEmployeeFieldError("full_name")
+      setEmployeeError("Full name is required")
+      return
+    }
+    if (!employeeForm.password) {
+      setEmployeeFieldError("password")
+      setEmployeeError("Password is required")
+      return
+    }
+
     setCreatingEmployee(true)
 
     try {
@@ -244,17 +270,17 @@ export default function MasterAdminPage() {
       })
 
       const data = await response.json()
-      if (!response.ok) throw new Error(data?.message || "Failed to create employee")
+      if (!response.ok) {
+        setEmployeeError(data?.message || "Failed to create employee")
+        setEmployeeFieldError(data?.field || "")
+        return
+      }
 
       toast({ title: "Success", description: "Employee created" })
       closeEmployeeModal()
       await fetchEmployees()
     } catch (error) {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create employee",
-        variant: "destructive",
-      })
+      setEmployeeError(error instanceof Error ? error.message : "Failed to create employee")
     } finally {
       setCreatingEmployee(false)
     }
@@ -523,26 +549,36 @@ export default function MasterAdminPage() {
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
                 <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 p-6 space-y-4">
                   <h3 className="text-lg font-semibold text-gray-800">New Employee</h3>
+
+                  {employeeError && (
+                    <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                      {employeeError}
+                    </div>
+                  )}
+
                   <form onSubmit={handleCreateEmployee} className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <Label>User ID (Login)</Label>
                         <Input
                           value={employeeForm.login_id}
-                          onChange={(e) => setEmployeeForm((prev) => ({ ...prev, login_id: e.target.value }))}
+                          onChange={(e) => { setEmployeeForm((prev) => ({ ...prev, login_id: e.target.value })); if (employeeFieldError === "login_id") { setEmployeeFieldError(""); setEmployeeError(""); } }}
                           placeholder="Enter user ID"
                           autoFocus
-                          required
+                          className={employeeFieldError === "login_id" ? "border-red-400" : ""}
                         />
+                        {employeeFieldError === "login_id" && <p className="text-red-500 text-sm mt-1">{employeeError}</p>}
+                        <p className="text-xs text-gray-400 mt-1">3–20 characters, lowercase letters, numbers, underscore. No spaces.</p>
                       </div>
                       <div>
                         <Label>Full Name</Label>
                         <Input
                           value={employeeForm.full_name}
-                          onChange={(e) => setEmployeeForm((prev) => ({ ...prev, full_name: e.target.value }))}
+                          onChange={(e) => { setEmployeeForm((prev) => ({ ...prev, full_name: e.target.value })); if (employeeFieldError === "full_name") { setEmployeeFieldError(""); setEmployeeError(""); } }}
                           placeholder="Enter full name"
-                          required
+                          className={employeeFieldError === "full_name" ? "border-red-400" : ""}
                         />
+                        {employeeFieldError === "full_name" && <p className="text-red-500 text-sm mt-1">{employeeError}</p>}
                       </div>
                       <div>
                         <Label>Email</Label>
@@ -578,9 +614,9 @@ export default function MasterAdminPage() {
                           <Input
                             type={showPassword ? "text" : "password"}
                             value={employeeForm.password}
-                            onChange={(e) => setEmployeeForm((prev) => ({ ...prev, password: e.target.value }))}
+                            onChange={(e) => { setEmployeeForm((prev) => ({ ...prev, password: e.target.value })); if (employeeFieldError === "password") { setEmployeeFieldError(""); setEmployeeError(""); } }}
                             placeholder="Enter password"
-                            required
+                            className={employeeFieldError === "password" ? "border-red-400" : ""}
                           />
                           <button
                             type="button"
@@ -591,6 +627,8 @@ export default function MasterAdminPage() {
                             {showPassword ? "Hide" : "Show"}
                           </button>
                         </div>
+                        {employeeFieldError === "password" && <p className="text-red-500 text-sm mt-1">{employeeError}</p>}
+                        <p className="text-xs text-gray-400 mt-1">Min 8 characters. Must include uppercase, lowercase, and a number.</p>
                       </div>
                     </div>
                     <div className="flex justify-end gap-2">

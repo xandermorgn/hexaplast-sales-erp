@@ -182,6 +182,7 @@ export default function WorkOrdersPage() {
   const [workOrders, setWorkOrders] = useState<WorkOrderRow[]>([])
   const [showForm, setShowForm] = useState(false)
   const [filters, setFilters] = useState({ from_date: "", to_date: "" })
+  const [formError, setFormError] = useState("")
 
   const [editingId, setEditingId] = useState<number | null>(null)
   const [inquiryId, setInquiryId] = useState("")
@@ -404,9 +405,10 @@ export default function WorkOrdersPage() {
 
   async function submitWorkOrder(event: FormEvent) {
     event.preventDefault()
+    setFormError("")
 
     if (!inquiryId) {
-      toast({ title: "Validation", description: "Please choose inquiry", variant: "destructive" })
+      setFormError("Please choose an inquiry before saving.")
       return
     }
 
@@ -429,7 +431,7 @@ export default function WorkOrdersPage() {
       }))
 
     if (sanitizedItems.length === 0) {
-      toast({ title: "Validation", description: "Please add at least one product", variant: "destructive" })
+      setFormError("Please add at least one product.")
       return
     }
 
@@ -462,17 +464,16 @@ export default function WorkOrdersPage() {
       })
 
       const data = await response.json()
-      if (!response.ok) throw new Error(data?.message || "Failed to save work order")
+      if (!response.ok) {
+        setFormError(data?.message || "Failed to save work order")
+        return
+      }
 
       toast({ title: "Success", description: isUpdate ? "Work order updated" : "Work order saved" })
       await fetchWorkOrders()
       setShowForm(false)
     } catch (error) {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to save work order",
-        variant: "destructive",
-      })
+      setFormError(error instanceof Error ? error.message : "Failed to save work order")
     }
   }
 
@@ -616,6 +617,11 @@ export default function WorkOrdersPage() {
         {showForm && (
         <>
         <form onSubmit={submitWorkOrder} className="rounded-lg border border-gray-200 bg-white p-5 space-y-4">
+          {formError && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+              {formError}
+            </div>
+          )}
           {/* Customer Inquiry Selector */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>

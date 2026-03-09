@@ -17,12 +17,26 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
+  const [fieldError, setFieldError] = useState("")
   const [showPassword, setShowPassword] = useState(false)
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsLoading(true)
     setError("")
+    setFieldError("")
+
+    if (!loginId.trim()) {
+      setFieldError("loginId")
+      setError("Please enter your User ID")
+      return
+    }
+    if (!password) {
+      setFieldError("password")
+      setError("Please enter your password")
+      return
+    }
+
+    setIsLoading(true)
 
     try {
       const response = await fetch(apiUrl("/api/auth/login"), {
@@ -84,27 +98,34 @@ export default function LoginPage() {
           <img src="/hexaplast-logo.svg" alt="Hexaplast Logo" className="h-16 w-auto" />
         </CardHeader>
         <CardContent className="space-y-4">
+          {error && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+              {error}
+            </div>
+          )}
           <form onSubmit={handleLogin} className="space-y-4">
-            <div className="flex flex-col space-y-2">
+            <div className="flex flex-col space-y-1.5">
               <Label htmlFor="loginId">User ID</Label>
               <Input
                 id="loginId"
                 type="text"
                 value={loginId}
-                onChange={(e) => setLoginId(e.target.value)}
+                onChange={(e) => { setLoginId(e.target.value); if (fieldError === "loginId") { setFieldError(""); setError(""); } }}
                 placeholder="Enter your User ID"
+                className={fieldError === "loginId" ? "border-red-400" : ""}
               />
+              {fieldError === "loginId" && <p className="text-red-500 text-sm">{error}</p>}
             </div>
-            <div className="flex flex-col space-y-2">
+            <div className="flex flex-col space-y-1.5">
               <Label htmlFor="password">Password</Label>
               <div className="relative">
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => { setPassword(e.target.value); if (fieldError === "password") { setFieldError(""); setError(""); } }}
                   placeholder="Enter your password"
-                  className="pr-10"
+                  className={`pr-10 ${fieldError === "password" ? "border-red-400" : ""}`}
                 />
                 <button
                   type="button"
@@ -118,11 +139,11 @@ export default function LoginPage() {
                   )}
                 </button>
               </div>
+              {fieldError === "password" && <p className="text-red-500 text-sm">{error}</p>}
             </div>
-            <Button type="submit" disabled={isLoading || !loginId || !password}>
+            <Button type="submit" disabled={isLoading}>
               {isLoading ? "Loading..." : "Login"}
             </Button>
-            {error && <p className="text-red-500 text-sm">{error}</p>}
           </form>
         </CardContent>
       </Card>
