@@ -11,6 +11,7 @@
 import { get, query, run } from '../config/database.js';
 import { logAudit, AUDIT_ACTIONS, ENTITY_TYPES } from '../utils/auditLogger.js';
 import { hashPassword } from '../utils/hash.js';
+import { destroyUserSessions } from '../utils/session.js';
 
 function isStrongPassword(password) {
   if (typeof password !== 'string') return false;
@@ -522,6 +523,10 @@ export function deleteEmployee(req, res) {
       new_value: null,
       req
     });
+
+    // Invalidate ALL sessions for this user so they get auto-logged out immediately
+    const sessionsDestroyed = destroyUserSessions(userId);
+    console.log(`Destroyed ${sessionsDestroyed} session(s) for fired user ${userId}`);
 
     // Hard delete in reverse order of creation (profile -> employee -> user)
     // This ensures foreign key constraints are satisfied

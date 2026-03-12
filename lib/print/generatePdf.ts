@@ -49,7 +49,7 @@ export type PdfTotals = {
 }
 
 export type GeneratePdfInput = {
-  title: "QUOTATION" | "PROFORMA INVOICE" | "WORK ORDER"
+  title: "QUOTATION" | "PROFORMA INVOICE" | "WORK ORDER" | "PURCHASE ORDER"
   customerName?: string | null
   leftFields?: PdfMetaField[]
   rightFields?: PdfMetaField[]
@@ -59,6 +59,8 @@ export type GeneratePdfInput = {
   totals: PdfTotals
   showCategoryColumns?: boolean
   currency?: string
+  customColumns?: { header: string; width: number; align?: "right" | "center" | "left"; key: string }[]
+  termsConditions?: string | null
 }
 
 /* ------------------------------------------------------------------ */
@@ -96,6 +98,26 @@ function toTitleCase(str: string | null | undefined): string {
   )
 }
 
+/**
+ * Strip HTML tags from rich text content and split into lines.
+ * Treats <li>, <p>, <br> as line breaks. Returns non-empty trimmed lines.
+ */
+function stripHtmlToLines(html: string): string[] {
+  if (!html) return []
+  // Replace block-level tags with newlines
+  let text = html
+    .replace(/<\/?(li|p|br|div|h[1-6])[^>]*\/?>/gi, "\n")
+    .replace(/<\/?(ol|ul)[^>]*>/gi, "")
+    .replace(/<[^>]+>/g, "")        // strip remaining tags
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'")
+  return text.split("\n").map((l: string) => l.trim()).filter((l: string) => l.length > 0)
+}
+
 function makeMoney(currencyCode: string) {
   const prefix = CURRENCY_PREFIX[currencyCode] || "INR"
   const fmt = (v: number | null | undefined): string =>
@@ -128,8 +150,9 @@ const s = StyleSheet.create({
   logoImg: {
     height: 55,
     width: 200,
-    objectFit: "contain",
-    alignSelf: "flex-start",
+    objectFit: "contain" as const,
+    alignSelf: "flex-start" as const,
+    marginLeft: -8,
   },
   docTitle: {
     fontSize: 24,
@@ -346,10 +369,10 @@ function getColumns(): Col[] {
 function cellValue(item: PdfItem, key: string, idx: number, plain: (v: number | null | undefined) => string): string {
   if (key === "idx") return String(idx + 1)
   if (key === "quantity") return String(item.quantity ?? 0)
-  if (key === "price") return plain(item.price)
+  if (key === "price" || key === "unit_price") return plain((item as Record<string, unknown>)[key] as number ?? item.price)
   if (key === "discount_amount") return plain(item.discount_amount)
   if (key === "gst_percent") return String(Number(item.gst_percent ?? 0).toFixed(1))
-  if (key === "total") return plain(item.total)
+  if (key === "total" || key === "total_price") return plain((item as Record<string, unknown>)[key] as number ?? item.total)
   return String((item as Record<string, unknown>)[key] ?? "-")
 }
 
@@ -411,7 +434,7 @@ function HexaplastDocument(props: GeneratePdfInput) {
   const leftInfo = leftFields.length > 0 ? leftFields : metaFields
   const rightInfo = rightFields
 
-  const cols = getColumns()
+  const cols = props.customColumns || getColumns()
 
   const logoSrc = typeof window !== "undefined"
     ? `${window.location.origin}/hexaplast-logo.png`
@@ -493,6 +516,19 @@ function HexaplastDocument(props: GeneratePdfInput) {
             : null,
         ),
       ),
+
+      /* ── TERMS & CONDITIONS ─────────────────────────── */
+      props.termsConditions
+        ? h(View, { style: { marginBottom: 12, marginTop: 4 } },
+            h(Text, { style: { fontFamily: "Helvetica-Bold", fontSize: 10, color: DARK, marginBottom: 6 } }, "Terms & Conditions:"),
+            ...stripHtmlToLines(props.termsConditions).map((line, i) =>
+              h(View, { key: `tc${i}`, style: { flexDirection: "row" as const, marginBottom: 3, paddingLeft: 4 } },
+                h(Text, { style: { fontSize: 8.5, color: DARK, width: 16 } }, `${i + 1}.`),
+                h(Text, { style: { fontSize: 8.5, color: "#374151", flex: 1, lineHeight: 1.5 } }, line),
+              ),
+            ),
+          )
+        : null,
 
       /* ── SIGNATURE BLOCKS ───────────────────────────── */
       h(View, { style: s.sigSection },

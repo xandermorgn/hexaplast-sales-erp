@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, type FormEvent } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -79,6 +79,7 @@ export default function ServerAdminPage() {
     { id: "global-workorders", label: "Global Work Orders" },
     { id: "audit-logs", label: "Audit Logs" },
     { id: "system-settings", label: "System Settings" },
+    { id: "database", label: "Database" },
     { id: "profile", label: "Profile" },
   ]
 
@@ -97,6 +98,20 @@ export default function ServerAdminPage() {
   const [newMasterAdmin, setNewMasterAdmin] = useState({ name: "", login_id: "", password: "" })
   const [savingMasterAdmin, setSavingMasterAdmin] = useState(false)
   const [masterAdminFormError, setMasterAdminFormError] = useState("")
+
+  // Database management state
+  const [dbDeleteStep, setDbDeleteStep] = useState<"idle" | "confirm" | "master_admin">("idle")
+  const [dbDeletePassword, setDbDeletePassword] = useState("")
+  const [dbDeleteNewAdmin, setDbDeleteNewAdmin] = useState({ name: "", login_id: "", password: "" })
+  const [dbDeleteError, setDbDeleteError] = useState("")
+  const [dbDeleting, setDbDeleting] = useState(false)
+  const [dbBackingUp, setDbBackingUp] = useState(false)
+  const [dbImportPassword, setDbImportPassword] = useState("")
+  const [dbImportError, setDbImportError] = useState("")
+  const [dbImporting, setDbImporting] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const dbImportFileRef = useRef<HTMLInputElement>(null)
+  const [dbImportFile, setDbImportFile] = useState<File | null>(null)
 
   async function fetchMasterAdmins() {
     const response = await fetch(apiUrl("/api/users/master-admins"), { credentials: "include" })
@@ -158,6 +173,105 @@ export default function ServerAdminPage() {
   }, [isLoading, user?.role])
 
   // Socket.io real-time refresh disabled – will be replaced with polling/SSE
+
+  // ── Database Management Functions ──
+
+  async function handleBackupDatabase() {
+    setDbBackingUp(true)
+    try {
+      const res = await fetch(apiUrl("/api/database/backup"), { credentials: "include" })
+      const data = await res.json()
+      if (!res.ok) {
+        toast({ title: "Error", description: data.message || "Failed to backup database", variant: "destructive" })
+        return
+      }
+      // Decode base64 to binary and trigger download
+      const binaryStr = atob(data.data)
+      const bytes = new Uint8Array(binaryStr.length)
+      for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
+      const blob = new Blob([bytes], { type: "application/octet-stream" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = data.filename || "hexaplast-erp-backup.db"
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast({ title: "Success", description: "Database backup downloaded" })
+    } catch {
+      toast({ title: "Error", description: "Failed to backup database", variant: "destructive" })
+    } finally {
+      setDbBackingUp(false)
+    }
+  }
+
+  async function handleDeleteDatabase() {
+    setDbDeleting(true)
+    setDbDeleteError("")
+    try {
+      const res = await fetch(apiUrl("/api/database/delete"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          password: dbDeletePassword,
+          new_master_admin: dbDeleteNewAdmin,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setDbDeleteError(data.message || "Failed to delete database")
+        return
+      }
+      toast({ title: "Success", description: data.message || "Database deleted and re-initialized" })
+      setDbDeleteStep("idle")
+      setDbDeletePassword("")
+      setDbDeleteNewAdmin({ name: "", login_id: "", password: "" })
+      // Force logout since the DB has been wiped
+      logout()
+    } catch {
+      setDbDeleteError("Failed to delete database")
+    } finally {
+      setDbDeleting(false)
+    }
+  }
+
+  async function handleImportDatabase() {
+    if (!dbImportFile) return
+    setDbImporting(true)
+    setDbImportError("")
+    try {
+      // Read file as base64
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = reject
+        reader.readAsDataURL(dbImportFile)
+      })
+
+      const res = await fetch(apiUrl("/api/database/import"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ db_base64: base64, password: dbImportPassword }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setDbImportError(data.message || "Failed to import database")
+        return
+      }
+      toast({ title: "Success", description: data.message || "Database imported successfully" })
+      setShowImportModal(false)
+      setDbImportFile(null)
+      setDbImportPassword("")
+      logout()
+    } catch {
+      setDbImportError("Failed to import database")
+    } finally {
+      setDbImporting(false)
+    }
+  }
 
   async function handleCreateMasterAdmin(event: FormEvent) {
     event.preventDefault()
@@ -404,6 +518,173 @@ export default function ServerAdminPage() {
               <Label>Default Special Notes</Label>
               <Textarea rows={3} value={systemDefaults.special_notes} readOnly />
             </div>
+          </div>
+        )}
+
+        {activeSection === "database" && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-800">Database Management</h2>
+              <p className="text-sm text-gray-500">Manage the ERP database. All ERP data is stored in a single database file.</p>
+            </div>
+
+            {/* Backup Database */}
+            <div className="rounded-lg border border-gray-200 bg-white p-5 space-y-3">
+              <h3 className="text-base font-semibold text-gray-800">Backup Database</h3>
+              <p className="text-sm text-gray-500">Download a copy of the current database. Use this to create regular backups.</p>
+              <Button onClick={handleBackupDatabase} disabled={dbBackingUp} variant="outline">
+                {dbBackingUp ? "Downloading..." : "Download Backup"}
+              </Button>
+            </div>
+
+            {/* Import Database */}
+            <div className="rounded-lg border border-gray-200 bg-white p-5 space-y-3">
+              <h3 className="text-base font-semibold text-gray-800">Import Database</h3>
+              <p className="text-sm text-gray-500">
+                Replace the current database with a previously backed-up database file. The current database will be overwritten.
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowImportModal(true)
+                  setDbImportFile(null)
+                  setDbImportPassword("")
+                  setDbImportError("")
+                }}
+              >
+                Import Database
+              </Button>
+            </div>
+
+            {/* Delete Database */}
+            <div className="rounded-lg border border-red-200 bg-red-50 p-5 space-y-3">
+              <h3 className="text-base font-semibold text-red-800">Delete Database</h3>
+              <p className="text-sm text-red-600">
+                This will permanently delete all data in the ERP, including all inquiries, quotations, work orders, products,
+                vendors, purchase orders, and user accounts. This action cannot be undone.
+              </p>
+
+              {dbDeleteStep === "idle" && (
+                <Button variant="destructive" onClick={() => { setDbDeleteStep("confirm"); setDbDeletePassword(""); setDbDeleteError("") }}>
+                  Delete Database
+                </Button>
+              )}
+
+              {dbDeleteStep === "confirm" && (
+                <div className="space-y-3 rounded-lg border border-red-300 bg-white p-4">
+                  <p className="text-sm font-medium text-red-700">Enter your Server Admin password to proceed:</p>
+                  {dbDeleteError && (
+                    <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{dbDeleteError}</div>
+                  )}
+                  <Input
+                    type="password"
+                    placeholder="Server admin password"
+                    value={dbDeletePassword}
+                    onChange={(e) => setDbDeletePassword(e.target.value)}
+                  />
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => { setDbDeleteStep("idle"); setDbDeletePassword(""); setDbDeleteError("") }}>Cancel</Button>
+                    <Button
+                      variant="destructive"
+                      disabled={!dbDeletePassword.trim()}
+                      onClick={() => { setDbDeleteStep("master_admin"); setDbDeleteError("") }}
+                    >
+                      Continue
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {dbDeleteStep === "master_admin" && (
+                <div className="space-y-3 rounded-lg border border-red-300 bg-white p-4">
+                  <p className="text-sm font-medium text-red-700">
+                    Create a new Master Admin. After deletion, this will be the only admin account:
+                  </p>
+                  {dbDeleteError && (
+                    <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{dbDeleteError}</div>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <Label>Name</Label>
+                      <Input value={dbDeleteNewAdmin.name} onChange={(e) => setDbDeleteNewAdmin((p) => ({ ...p, name: e.target.value }))} placeholder="Admin name" />
+                    </div>
+                    <div>
+                      <Label>Login ID</Label>
+                      <Input value={dbDeleteNewAdmin.login_id} onChange={(e) => setDbDeleteNewAdmin((p) => ({ ...p, login_id: e.target.value }))} placeholder="Login ID" />
+                    </div>
+                    <div>
+                      <Label>Password</Label>
+                      <Input type="password" value={dbDeleteNewAdmin.password} onChange={(e) => setDbDeleteNewAdmin((p) => ({ ...p, password: e.target.value }))} placeholder="Min 6 characters" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => { setDbDeleteStep("idle"); setDbDeletePassword(""); setDbDeleteNewAdmin({ name: "", login_id: "", password: "" }); setDbDeleteError("") }}>Cancel</Button>
+                    <Button
+                      variant="destructive"
+                      disabled={dbDeleting || !dbDeleteNewAdmin.name.trim() || !dbDeleteNewAdmin.login_id.trim() || !dbDeleteNewAdmin.password.trim()}
+                      onClick={handleDeleteDatabase}
+                    >
+                      {dbDeleting ? "Deleting..." : "Confirm Delete & Reset"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Import Modal */}
+            {showImportModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 p-6 space-y-4">
+                  <h3 className="text-lg font-semibold text-gray-800">Import Database</h3>
+                  <p className="text-sm text-gray-500">
+                    Select a previously backed-up database file (.db) and enter your server admin password to confirm.
+                  </p>
+
+                  {dbImportError && (
+                    <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{dbImportError}</div>
+                  )}
+
+                  <div>
+                    <Label>Database File</Label>
+                    <div className="mt-1">
+                      <input
+                        ref={dbImportFileRef}
+                        type="file"
+                        accept=".db,.sqlite,.sqlite3"
+                        className="hidden"
+                        onChange={(e) => setDbImportFile(e.target.files?.[0] || null)}
+                      />
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" onClick={() => dbImportFileRef.current?.click()}>
+                          Choose File
+                        </Button>
+                        <span className="text-sm text-gray-500">{dbImportFile ? dbImportFile.name : "No file selected"}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label>Server Admin Password</Label>
+                    <Input
+                      type="password"
+                      placeholder="Enter password to confirm"
+                      value={dbImportPassword}
+                      onChange={(e) => setDbImportPassword(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => { setShowImportModal(false); setDbImportFile(null); setDbImportPassword(""); setDbImportError("") }}>Cancel</Button>
+                    <Button
+                      disabled={dbImporting || !dbImportFile || !dbImportPassword.trim()}
+                      onClick={handleImportDatabase}
+                    >
+                      {dbImporting ? "Importing..." : "Import & Replace Database"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

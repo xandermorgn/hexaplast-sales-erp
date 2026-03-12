@@ -169,13 +169,11 @@ export function getResponses(req, res) {
 
 /**
  * POST /api/purchase/orders/generate
- * Auto-generate purchase orders from materials that have all vendor responses.
- * For each material: picks the vendor with the lowest unit_price.
- * Groups winning materials by vendor, creates one PO per vendor.
+ * Preview pending purchase orders (does NOT create them).
+ * Returns grouped materials by vendor with lowest-price vendor selection.
  */
 export function generatePurchaseOrders(req, res) {
   try {
-    // Find all materials in purchase that have at least one inquiry with a response
     const materialsInPurchase = query(`
       SELECT DISTINCT bm.id AS bom_material_id, bm.part_name, bm.specification,
              bm.quantity, bm.unit, bm.bom_id
@@ -184,14 +182,12 @@ export function generatePurchaseOrders(req, res) {
     `);
 
     if (materialsInPurchase.length === 0) {
-      return res.status(400).json({ error: 'No materials', message: 'No materials in purchase list' });
+      return res.status(400).json({ error: 'No materials', message: 'No materials in purchase list.' });
     }
 
-    // For each material, find the best vendor (lowest unit_price across all inquiries)
-    const winners = []; // { bom_material_id, vendor_id, inquiry_id, unit_price, total_price, part_name, ... }
+    const winners = [];
 
     for (const mat of materialsInPurchase) {
-      // Get all inquiries for this material that have a response
       const respondedInquiries = query(`
         SELECT
           pi.id AS inquiry_id,
@@ -204,9 +200,8 @@ export function generatePurchaseOrders(req, res) {
         ORDER BY ivr.unit_price ASC
       `, [mat.bom_material_id]);
 
-      if (respondedInquiries.length === 0) continue; // skip materials without any responses
+      if (respondedInquiries.length === 0) continue;
 
-      // Check if ALL inquiries for this material have responses
       const totalInquiries = get(
         'SELECT COUNT(*) AS cnt FROM purchase_inquiries WHERE bom_material_id = ?',
         [mat.bom_material_id]
@@ -218,16 +213,24 @@ export function generatePurchaseOrders(req, res) {
         [mat.bom_material_id]
       );
 
-      if (totalInquiries.cnt !== respondedCount.cnt) continue; // not all vendors have responded yet
+      if (totalInquiries.cnt !== respondedCount.cnt) continue;
 
-      // Check material isn't already in a purchase order
       const alreadyOrdered = get(
         'SELECT id FROM purchase_order_items WHERE bom_material_id = ?',
         [mat.bom_material_id]
       );
       if (alreadyOrdered) continue;
 
-      const best = respondedInquiries[0]; // lowest unit_price (already sorted ASC)
+      const best = respondedInquiries[0];
+
+      // Get work order number for this material
+      const woInfo = get(`
+        SELECT wo.work_order_number
+        FROM work_order_boms wob
+        LEFT JOIN work_orders wo ON wob.work_order_id = wo.id
+        WHERE wob.id = (SELECT bom_id FROM bom_materials WHERE id = ?)
+      `, [mat.bom_material_id]);
+
       winners.push({
         bom_material_id: mat.bom_material_id,
         vendor_id: best.vendor_id,
@@ -238,13 +241,14 @@ export function generatePurchaseOrders(req, res) {
         specification: mat.specification,
         quantity: mat.quantity,
         unit: mat.unit,
+        work_order_number: woInfo?.work_order_number || null,
       });
     }
 
     if (winners.length === 0) {
       return res.status(400).json({
         error: 'Not ready',
-        message: 'No materials are ready for PO generation. Ensure all inquiries have vendor responses.',
+        message: 'No purchase orders available to generate. Ensure all inquiries have vendor responses.',
       });
     }
 
@@ -255,6 +259,57 @@ export function generatePurchaseOrders(req, res) {
       byVendor[w.vendor_id].push(w);
     }
 
+    // Build preview list (no DB writes)
+    const pendingPOs = [];
+    for (const [vendorId, items] of Object.entries(byVendor)) {
+      const vendor = get('SELECT * FROM vendors WHERE id = ?', [Number(vendorId)]);
+      const totalAmount = items.reduce((sum, it) => sum + (it.total_price || 0), 0);
+      const workOrderNumbers = [...new Set(items.map(i => i.work_order_number).filter(Boolean))];
+
+      pendingPOs.push({
+        vendor_id: Number(vendorId),
+        vendor_name: vendor?.name || 'Unknown',
+        vendor_phone: vendor?.phone || null,
+        vendor_email: vendor?.email || null,
+        vendor_gst: vendor?.gst || null,
+        total_amount: totalAmount,
+        work_order_numbers: workOrderNumbers,
+        items: items.map(i => ({
+          bom_material_id: i.bom_material_id,
+          inquiry_id: i.inquiry_id,
+          part_name: i.part_name,
+          specification: i.specification,
+          quantity: i.quantity,
+          unit: i.unit,
+          unit_price: i.unit_price,
+          total_price: i.total_price,
+        })),
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      pending_purchase_orders: pendingPOs,
+    });
+  } catch (error) {
+    console.error('Generate PO preview error:', error);
+    return res.status(500).json({ error: 'Internal server error', message: 'Failed to preview purchase orders' });
+  }
+}
+
+/**
+ * POST /api/purchase/orders/confirm
+ * Create a single purchase order from the preview data.
+ * Body: { vendor_id, gst_amount, terms_conditions, items: [{ bom_material_id, inquiry_id, part_name, specification, quantity, unit, unit_price, total_price }] }
+ */
+export function confirmPurchaseOrder(req, res) {
+  try {
+    const { vendor_id, gst_amount, terms_conditions, items } = req.body;
+
+    if (!vendor_id || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Validation error', message: 'vendor_id and items are required' });
+    }
+
     // Generate PO number
     const lastPo = get("SELECT po_number FROM purchase_orders ORDER BY id DESC LIMIT 1");
     let nextNum = 1;
@@ -263,52 +318,48 @@ export function generatePurchaseOrders(req, res) {
       if (match) nextNum = parseInt(match[1], 10) + 1;
     }
 
-    const createdPOs = [];
+    const poNumber = `HP/PO/${String(nextNum).padStart(4, '0')}`;
+    const subtotal = items.reduce((sum, it) => sum + (Number(it.total_price) || 0), 0);
+    const gst = Number(gst_amount) || 0;
+    const totalAmount = subtotal + gst;
 
-    for (const [vendorId, items] of Object.entries(byVendor)) {
-      const poNumber = `HP/PO/${String(nextNum).padStart(4, '0')}`;
-      nextNum++;
+    const poResult = run(
+      `INSERT INTO purchase_orders (po_number, vendor_id, status, total_amount, gst_amount, terms_conditions)
+       VALUES (?, ?, 'draft', ?, ?, ?)`,
+      [poNumber, Number(vendor_id), totalAmount, gst, terms_conditions || null]
+    );
 
-      const totalAmount = items.reduce((sum, it) => sum + (it.total_price || 0), 0);
+    const poId = poResult.lastInsertRowid;
 
-      const poResult = run(
-        `INSERT INTO purchase_orders (po_number, vendor_id, status, total_amount)
-         VALUES (?, ?, 'draft', ?)`,
-        [poNumber, Number(vendorId), totalAmount]
+    for (const item of items) {
+      run(
+        `INSERT INTO purchase_order_items (purchase_order_id, bom_material_id, inquiry_id, part_name, specification, quantity, unit, unit_price, total_price)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [poId, item.bom_material_id, item.inquiry_id, item.part_name, item.specification, item.quantity, item.unit, item.unit_price, item.total_price]
       );
 
-      const poId = poResult.lastInsertRowid;
-
-      for (const item of items) {
-        run(
-          `INSERT INTO purchase_order_items (purchase_order_id, bom_material_id, inquiry_id, part_name, specification, quantity, unit, unit_price, total_price)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [poId, item.bom_material_id, item.inquiry_id, item.part_name, item.specification, item.quantity, item.unit, item.unit_price, item.total_price]
-        );
-
-        // Close all inquiries for this material
-        run('UPDATE purchase_inquiries SET status = ? WHERE bom_material_id = ?', ['closed', item.bom_material_id]);
-      }
-
-      const vendor = get('SELECT name FROM vendors WHERE id = ?', [Number(vendorId)]);
-      createdPOs.push({
-        id: poId,
-        po_number: poNumber,
-        vendor_id: Number(vendorId),
-        vendor_name: vendor?.name || 'Unknown',
-        total_amount: totalAmount,
-        item_count: items.length,
-      });
+      // Close all inquiries for this material
+      run('UPDATE purchase_inquiries SET status = ? WHERE bom_material_id = ?', ['closed', item.bom_material_id]);
     }
+
+    const vendor = get('SELECT name FROM vendors WHERE id = ?', [Number(vendor_id)]);
 
     return res.status(201).json({
       success: true,
-      message: `Created ${createdPOs.length} purchase order(s)`,
-      purchase_orders: createdPOs,
+      message: `Purchase order ${poNumber} created`,
+      purchase_order: {
+        id: poId,
+        po_number: poNumber,
+        vendor_id: Number(vendor_id),
+        vendor_name: vendor?.name || 'Unknown',
+        total_amount: totalAmount,
+        gst_amount: gst,
+        item_count: items.length,
+      },
     });
   } catch (error) {
-    console.error('Generate PO error:', error);
-    return res.status(500).json({ error: 'Internal server error', message: 'Failed to generate purchase orders' });
+    console.error('Confirm PO error:', error);
+    return res.status(500).json({ error: 'Internal server error', message: 'Failed to create purchase order' });
   }
 }
 
@@ -323,7 +374,15 @@ export function getAllPurchaseOrders(req, res) {
         po.*,
         v.name AS vendor_name,
         v.phone AS vendor_phone,
-        (SELECT COUNT(*) FROM purchase_order_items poi WHERE poi.purchase_order_id = po.id) AS item_count
+        (SELECT COUNT(*) FROM purchase_order_items poi WHERE poi.purchase_order_id = po.id) AS item_count,
+        (SELECT wo.work_order_number
+         FROM purchase_order_items poi2
+         JOIN bom_materials bm ON poi2.bom_material_id = bm.id
+         JOIN work_order_boms wob ON bm.bom_id = wob.id
+         LEFT JOIN work_orders wo ON wob.work_order_id = wo.id
+         WHERE poi2.purchase_order_id = po.id
+         LIMIT 1
+        ) AS work_order_number
       FROM purchase_orders po
       JOIN vendors v ON po.vendor_id = v.id
       ORDER BY po.id DESC
@@ -346,7 +405,15 @@ export function getPurchaseOrderById(req, res) {
     if (!id) return res.status(400).json({ error: 'Validation error', message: 'Invalid PO id' });
 
     const po = get(`
-      SELECT po.*, v.name AS vendor_name, v.phone AS vendor_phone, v.email AS vendor_email, v.address AS vendor_address, v.gst AS vendor_gst
+      SELECT po.*, v.name AS vendor_name, v.phone AS vendor_phone, v.email AS vendor_email, v.address AS vendor_address, v.gst AS vendor_gst,
+        (SELECT wo.work_order_number
+         FROM purchase_order_items poi2
+         JOIN bom_materials bm ON poi2.bom_material_id = bm.id
+         JOIN work_order_boms wob ON bm.bom_id = wob.id
+         LEFT JOIN work_orders wo ON wob.work_order_id = wo.id
+         WHERE poi2.purchase_order_id = po.id
+         LIMIT 1
+        ) AS work_order_number
       FROM purchase_orders po
       JOIN vendors v ON po.vendor_id = v.id
       WHERE po.id = ?

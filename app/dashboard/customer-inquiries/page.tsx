@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, type FormEvent } from "react"
+import { useEffect, useState, useCallback, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { DateRangeFilter } from "@/components/ui/date-range-filter"
+import { useSilentRefresh } from "@/hooks/use-silent-refresh"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/hooks/use-auth"
 import { useGeoCountries, useGeoStates, useGeoCities } from "@/hooks/use-geo"
@@ -191,7 +192,9 @@ export default function CustomerInquiriesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.from_date, filters.to_date])
 
-  // Socket.io real-time refresh disabled – will be replaced with polling/SSE
+  // Silent background refresh every 30s
+  const silentFetch = useCallback(async () => { await fetchInquiries(filters) }, [filters.from_date, filters.to_date])
+  useSilentRefresh(silentFetch, 30000)
 
   function openCreateForm() {
     setEditingId(null)

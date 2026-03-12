@@ -16,15 +16,6 @@ import { apiUrl } from "@/lib/api"
 
 type ProductTab = "machines" | "spares" | "categories"
 
-type MachinePart = {
-  id?: number
-  machine_id?: number
-  part_number: string
-  part_name: string
-  specification: string
-  unit: string
-}
-
 type Product = {
   id: number
   category_id: number | null
@@ -106,12 +97,6 @@ export default function ProductsPage() {
   const [deletingCategoryId, setDeletingCategoryId] = useState<number | null>(null)
   const { currencies: currencyOptions } = useGeoCurrencies()
   const [productFormError, setProductFormError] = useState("")
-
-  // Machine Parts state
-  const [partsModalMachineId, setPartsModalMachineId] = useState<number | null>(null)
-  const [partsModalMachineName, setPartsModalMachineName] = useState("")
-  const [machineParts, setMachineParts] = useState<MachinePart[]>([])
-  const [savingParts, setSavingParts] = useState(false)
 
   const menuItems = [
     { id: "inquiries", label: "Customer Inquiries" },
@@ -359,94 +344,6 @@ export default function ProductsPage() {
     }
   }
 
-  // ── Machine Parts ──
-
-  async function openPartsModal(machine: Product) {
-    setPartsModalMachineId(machine.id)
-    setPartsModalMachineName(machine.product_name || "Machine")
-    try {
-      const res = await fetch(apiUrl(`/api/products/machines/${machine.id}/parts`), { credentials: "include" })
-      if (res.ok) {
-        const data = await res.json()
-        setMachineParts((data.parts || []).map((p: any) => ({
-          id: p.id,
-          machine_id: p.machine_id,
-          part_number: p.part_number || "",
-          part_name: p.part_name || "",
-          specification: p.specification || "",
-          unit: p.unit || "Nos",
-          default_quantity: Number(p.default_quantity) || 1,
-        })))
-      }
-    } catch {
-      toast({ title: "Error", description: "Failed to load parts", variant: "destructive" })
-    }
-  }
-
-  function closePartsModal() {
-    setPartsModalMachineId(null)
-    setMachineParts([])
-  }
-
-  function addEmptyPart() {
-    setMachineParts([...machineParts, { part_number: "", part_name: "", specification: "", unit: "Nos" }])
-  }
-
-  function autoGeneratePartNumber(name: string, spec: string): string {
-    const shortName = name.trim().split(/\s+/)[0].toUpperCase().slice(0, 10)
-    const shortSpec = spec.trim().split(/\s+/).slice(0, 2).join("").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 6)
-    if (!shortName) return ""
-    return shortSpec ? `${shortName}-${shortSpec}` : shortName
-  }
-
-  function updatePartField(idx: number, field: keyof MachinePart, value: string | number) {
-    setMachineParts(machineParts.map((p, i) => i === idx ? { ...p, [field]: value } : p))
-  }
-
-  function removePartRow(idx: number) {
-    setMachineParts(machineParts.filter((_, i) => i !== idx))
-  }
-
-  async function saveParts() {
-    if (!partsModalMachineId) return
-
-    // Duplicate detection
-    const validParts = machineParts.filter((p) => p.part_name.trim())
-    const seen = new Set<string>()
-    for (const p of validParts) {
-      const key = `${p.part_name.trim().toLowerCase()}|${(p.specification || "").trim().toLowerCase()}`
-      if (seen.has(key)) {
-        toast({ title: "Duplicate part detected", description: `"${p.part_name}" with specification "${p.specification || "-"}" already exists in this list.`, variant: "destructive" })
-        return
-      }
-      seen.add(key)
-    }
-
-    // Auto-generate part numbers
-    const partsToSave = validParts.map((p) => ({
-      ...p,
-      part_number: p.part_number || autoGeneratePartNumber(p.part_name, p.specification),
-    }))
-
-    setSavingParts(true)
-    try {
-      const res = await fetch(apiUrl(`/api/products/machines/${partsModalMachineId}/parts`), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ parts: partsToSave }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.message || "Failed to save parts")
-      toast({ title: "Success", description: "Machine parts saved" })
-      closePartsModal()
-    } catch (error) {
-      toast({ title: "Error", description: error instanceof Error ? error.message : "Failed to save parts", variant: "destructive" })
-    } finally {
-      setSavingParts(false)
-    }
-  }
-
   function startEdit(kind: "machines" | "spares", product: Product) {
     if (kind === "machines") {
       setMachineEditId(product.id)
@@ -618,15 +515,10 @@ export default function ProductsPage() {
                     <td className="px-3 py-2">{product.sales_price ?? "-"}</td>
                     <td className="px-3 py-2">{product.purchase_price ?? "-"}</td>
                     <td className="px-3 py-2">{product.gst_percent ?? "-"}</td>
-                    <td className="px-3 py-2 flex gap-1">
+                    <td className="px-3 py-2">
                       <Button size="sm" variant="outline" onClick={() => startEdit(kind, product)}>
                         Edit
                       </Button>
-                      {isMachine && (
-                        <Button size="sm" variant="outline" onClick={() => openPartsModal(product)}>
-                          Parts
-                        </Button>
-                      )}
                     </td>
                   </tr>
                   )
@@ -674,65 +566,6 @@ export default function ProductsPage() {
           <Button type="button" variant={activeTab === "spares" ? "default" : "outline"} onClick={() => setActiveTab("spares")}>Spare Products</Button>
           <Button type="button" variant={activeTab === "categories" ? "default" : "outline"} onClick={() => setActiveTab("categories")}>Categories</Button>
         </div>
-
-        {/* Machine Parts Modal */}
-        {partsModalMachineId !== null && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-              <h3 className="text-lg font-semibold text-gray-800">Machine Parts — {partsModalMachineName}</h3>
-              <p className="text-sm text-gray-500">Define the default parts list for this machine. These parts will auto-populate when a BOM is created.</p>
-
-              <div className="rounded-lg border border-gray-200 overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-gray-50 text-gray-700">
-                    <tr>
-                      <th className="px-3 py-2 text-left">#</th>
-                      <th className="px-3 py-2 text-left">Part Number</th>
-                      <th className="px-3 py-2 text-left">Part Name</th>
-                      <th className="px-3 py-2 text-left">Specification</th>
-                      <th className="px-3 py-2 text-left">Unit</th>
-                      <th className="px-3 py-2 text-left"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {machineParts.length === 0 ? (
-                      <tr><td className="px-3 py-3 text-gray-400" colSpan={7}>No parts yet. Click "+ Add Part" to begin.</td></tr>
-                    ) : (
-                      machineParts.map((part, idx) => (
-                        <tr key={idx} className="border-t">
-                          <td className="px-3 py-1 text-gray-500">{idx + 1}</td>
-                          <td className="px-3 py-1">
-                            <Input className="h-8 bg-gray-50" value={part.part_number || autoGeneratePartNumber(part.part_name, part.specification)} readOnly tabIndex={-1} placeholder="Auto" />
-                          </td>
-                          <td className="px-3 py-1">
-                            <Input className="h-8" value={part.part_name} onChange={(e) => updatePartField(idx, "part_name", e.target.value)} placeholder="Part name" required />
-                          </td>
-                          <td className="px-3 py-1">
-                            <Input className="h-8" value={part.specification} onChange={(e) => updatePartField(idx, "specification", e.target.value)} placeholder="1HP AC Motor" />
-                          </td>
-                          <td className="px-3 py-1">
-                            <Input className="h-8 w-20" value={part.unit} onChange={(e) => updatePartField(idx, "unit", e.target.value)} />
-                          </td>
-                          <td className="px-3 py-1">
-                            <Button size="sm" variant="destructive" onClick={() => removePartRow(idx)}>×</Button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="flex justify-between">
-                <Button type="button" variant="outline" onClick={addEmptyPart}>+ Add Part</Button>
-                <div className="flex gap-2">
-                  <Button type="button" variant="outline" onClick={closePartsModal}>Cancel</Button>
-                  <Button type="button" onClick={saveParts} disabled={savingParts}>{savingParts ? "Saving..." : "Save Parts"}</Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {activeTab === "categories" ? (
           <div className="space-y-4">

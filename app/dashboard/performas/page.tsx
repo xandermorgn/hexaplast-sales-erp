@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { useEffect, useMemo, useState, useCallback, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { Printer, Pencil, Trash2, FileOutput } from "lucide-react"
 import { DashboardLayout } from "@/components/dashboard-layout"
@@ -13,6 +13,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
 import { useCategories } from "@/hooks/use-categories"
 import { apiUrl } from "@/lib/api"
+import { useSilentRefresh } from "@/hooks/use-silent-refresh"
 import { parseNum } from "@/lib/parse-number"
 import { FollowUpSection } from "@/components/follow-up-section"
 
@@ -119,6 +120,14 @@ type DocumentDefaults = {
   special_notes: string
 }
 
+type TermsTemplate = {
+  id: number
+  document_type: string
+  title: string
+  content: string
+  is_active: number
+}
+
 const emptyItem = (): PerformaItemForm => ({
   product_key: "",
   product_type: "",
@@ -194,6 +203,7 @@ export default function PerformasPage() {
     declaration: "",
     special_notes: "",
   })
+  const [piTermsTemplates, setPiTermsTemplates] = useState<TermsTemplate[]>([])
 
   const selectedInquiry = useMemo(
     () => inquiries.find((inq) => String(inq.id) === inquiryId) || null,
@@ -341,9 +351,23 @@ export default function PerformasPage() {
     }
   }
 
+  async function fetchPiTermsTemplates() {
+    try {
+      const res = await fetch(apiUrl("/api/terms-conditions?document_type=proforma_invoice&active=1"), { credentials: "include" })
+      if (res.ok) {
+        const data = await res.json()
+        setPiTermsTemplates(data.terms || [])
+        // Auto-fill T&C from the first active proforma_invoice template if available
+        if ((data.terms || []).length > 0) {
+          setTermsConditions(data.terms[0].content || "")
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
   async function loadAll() {
     try {
-      await Promise.all([fetchInquiries(), fetchProducts(), fetchPerformas(), fetchDocumentDefaults(true)])
+      await Promise.all([fetchInquiries(), fetchProducts(), fetchPerformas(), fetchDocumentDefaults(true), fetchPiTermsTemplates()])
     } catch {
       toast({ title: "Error", description: "Failed to load performa module data", variant: "destructive" })
     }
@@ -353,6 +377,12 @@ export default function PerformasPage() {
     loadAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Silent background refresh every 30s
+  const silentRefresh = useCallback(async () => {
+    await Promise.all([fetchInquiries(), fetchPerformas()])
+  }, [])
+  useSilentRefresh(silentRefresh, 30000)
 
   function resetForm() {
     setEditingId(null)
@@ -711,22 +741,41 @@ export default function PerformasPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label>Terms & Conditions</Label>
-              <Textarea rows={3} value={termsConditions} onChange={(e) => setTermsConditions(e.target.value)} />
+          <div className="space-y-3">
+            <div className="flex items-center gap-4">
+              <h3 className="font-medium text-gray-800">Terms & Conditions</h3>
+              {piTermsTemplates.length > 1 && (
+                <select
+                  className="border border-gray-300 rounded-md h-9 px-3 text-sm"
+                  onChange={(e) => {
+                    const tpl = piTermsTemplates.find((t) => String(t.id) === e.target.value)
+                    if (tpl) setTermsConditions(tpl.content)
+                  }}
+                >
+                  <option value="">Load template...</option>
+                  {piTermsTemplates.map((t) => (
+                    <option key={t.id} value={t.id}>{t.title}</option>
+                  ))}
+                </select>
+              )}
             </div>
-            <div>
-              <Label>Attention</Label>
-              <Textarea rows={3} value={attention} onChange={(e) => setAttention(e.target.value)} />
-            </div>
-            <div>
-              <Label>Declaration</Label>
-              <Textarea rows={3} value={declaration} onChange={(e) => setDeclaration(e.target.value)} />
-            </div>
-            <div>
-              <Label>Special Notes</Label>
-              <Textarea rows={3} value={specialNotes} onChange={(e) => setSpecialNotes(e.target.value)} />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label>Terms & Conditions</Label>
+                <Textarea rows={3} value={termsConditions} onChange={(e) => setTermsConditions(e.target.value)} />
+              </div>
+              <div>
+                <Label>Attention</Label>
+                <Textarea rows={3} value={attention} onChange={(e) => setAttention(e.target.value)} />
+              </div>
+              <div>
+                <Label>Declaration</Label>
+                <Textarea rows={3} value={declaration} onChange={(e) => setDeclaration(e.target.value)} />
+              </div>
+              <div>
+                <Label>Special Notes</Label>
+                <Textarea rows={3} value={specialNotes} onChange={(e) => setSpecialNotes(e.target.value)} />
+              </div>
             </div>
           </div>
 

@@ -119,6 +119,50 @@ export function updateVendor(req, res) {
 }
 
 /**
+ * POST /api/vendors/bulk-import
+ * Import multiple vendors from parsed Excel/CSV data
+ * Body: { vendors: [{ name, phone, email, gst, address }] }
+ * Duplicate check: name + phone
+ */
+export function bulkImportVendors(req, res) {
+  try {
+    const { vendors: vendorList } = req.body;
+
+    if (!Array.isArray(vendorList) || vendorList.length === 0) {
+      return res.status(400).json({ error: 'Validation error', message: 'vendors array is required and must not be empty' });
+    }
+
+    let imported = 0;
+    let skipped = 0;
+
+    for (const v of vendorList) {
+      const name = (v.name || '').trim();
+      if (!name) { skipped++; continue; }
+
+      const phone = (v.phone || '').trim() || null;
+
+      // Duplicate check: same name AND same phone
+      const existing = get(
+        'SELECT id FROM vendors WHERE LOWER(name) = LOWER(?) AND (phone = ? OR (phone IS NULL AND ? IS NULL))',
+        [name, phone, phone]
+      );
+      if (existing) { skipped++; continue; }
+
+      run(
+        'INSERT INTO vendors (name, phone, email, address, gst) VALUES (?, ?, ?, ?, ?)',
+        [name, phone, (v.email || '').trim() || null, (v.address || '').trim() || null, (v.gst || '').trim() || null]
+      );
+      imported++;
+    }
+
+    return res.status(201).json({ success: true, imported, skipped });
+  } catch (error) {
+    console.error('Bulk import vendors error:', error);
+    return res.status(500).json({ error: 'Internal server error', message: 'Failed to import vendors' });
+  }
+}
+
+/**
  * DELETE /api/vendors/:id
  */
 export function deleteVendor(req, res) {

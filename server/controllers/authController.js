@@ -162,6 +162,7 @@ export function getCurrentUser(req, res) {
     return res.status(200).json({
       authenticated: true,
       user: {
+        id: session.userId,
         loginId: session.loginId,
         name: session.name,
         role: session.role,

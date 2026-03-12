@@ -128,6 +128,25 @@ export function destroySession(token) {
 }
 
 /**
+ * Destroy ALL sessions for a specific user (used when firing an employee)
+ * @param {number} userId - The user ID whose sessions should be destroyed
+ * @returns {number} Number of sessions destroyed
+ */
+export function destroyUserSessions(userId) {
+  let count = 0;
+  for (const [token, session] of sessions.entries()) {
+    if (session.userId === userId) {
+      sessions.delete(token);
+      count++;
+    }
+  }
+  if (count > 0) {
+    saveSessions();
+  }
+  return count;
+}
+
+/**
  * Clean up expired sessions (call periodically)
  */
 export function cleanupExpiredSessions() {

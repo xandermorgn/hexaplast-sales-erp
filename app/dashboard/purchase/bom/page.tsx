@@ -36,6 +36,7 @@ const menuItems = [
   { id: "inquiries", label: "Inquiries" },
   { id: "purchase-orders", label: "Purchase Orders" },
   { id: "vendors", label: "Vendors" },
+  { id: "products", label: "Products" },
 ]
 
 export default function BomListPage() {
@@ -50,6 +51,7 @@ export default function BomListPage() {
   function handleSectionChange(section: string) {
     const routeMap: Record<string, string> = {
       "pending-work-orders": "/dashboard/purchase/pending-work-orders",
+      products: "/dashboard/purchase/products",
       bom: "/dashboard/purchase/bom",
       purchase: "/dashboard/purchase/purchase",
       inquiries: "/dashboard/purchase/inquiries",

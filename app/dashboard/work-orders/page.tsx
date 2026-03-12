@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { useEffect, useMemo, useState, useCallback, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { Printer, Pencil, Trash2 } from "lucide-react"
 import { DashboardLayout } from "@/components/dashboard-layout"
@@ -13,6 +13,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
 import { useCategories } from "@/hooks/use-categories"
 import { apiUrl } from "@/lib/api"
+import { useSilentRefresh } from "@/hooks/use-silent-refresh"
 import { parseNum } from "@/lib/parse-number"
 import { FollowUpSection } from "@/components/follow-up-section"
 
@@ -349,6 +350,12 @@ export default function WorkOrdersPage() {
     loadAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Silent background refresh every 30s
+  const silentRefresh = useCallback(async () => {
+    await Promise.all([fetchInquiries(), fetchWorkOrders()])
+  }, [])
+  useSilentRefresh(silentRefresh, 30000)
 
   function resetForm() {
     setEditingId(null)

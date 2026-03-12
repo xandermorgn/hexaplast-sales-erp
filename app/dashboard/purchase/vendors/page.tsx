@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, type FormEvent } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
 import { apiUrl } from "@/lib/api"
+import { Upload, Download } from "lucide-react"
+import * as XLSX from "xlsx"
 
 type Vendor = {
   id: number
@@ -38,6 +40,7 @@ const menuItems = [
   { id: "inquiries", label: "Inquiries" },
   { id: "purchase-orders", label: "Purchase Orders" },
   { id: "vendors", label: "Vendors" },
+  { id: "products", label: "Products" },
 ]
 
 export default function VendorsPage() {
@@ -52,9 +55,15 @@ export default function VendorsPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [deletingId, setDeletingId] = useState<number | null>(null)
 
+  // Import state
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [importSummary, setImportSummary] = useState<{ imported: number; skipped: number } | null>(null)
+  const [importError, setImportError] = useState("")
+
   function handleSectionChange(section: string) {
     const routeMap: Record<string, string> = {
       "pending-work-orders": "/dashboard/purchase/pending-work-orders",
+      products: "/dashboard/purchase/products",
       bom: "/dashboard/purchase/bom",
       purchase: "/dashboard/purchase/purchase",
       inquiries: "/dashboard/purchase/inquiries",
@@ -138,6 +147,97 @@ export default function VendorsPage() {
     }
   }
 
+  // ── Excel/CSV Import ──
+
+  function downloadSampleFile() {
+    const sampleData = [
+      { Name: "ABC Supplies", Phone: "9825012345", Email: "abc@gmail.com", GST: "27ABCDE1234F1Z5", Address: "Ahmedabad" },
+      { Name: "XYZ Industries", Phone: "9876543210", Email: "xyz@gmail.com", GST: "24XYZAB5678C1D2", Address: "Mumbai" },
+    ]
+    const ws = XLSX.utils.json_to_sheet(sampleData)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Vendors")
+    XLSX.writeFile(wb, "vendor_sample.xlsx")
+  }
+
+  function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setImportSummary(null)
+    setImportError("")
+
+    const reader = new FileReader()
+    reader.onload = async (ev) => {
+      try {
+        const data = ev.target?.result
+        const workbook = XLSX.read(data, { type: "binary" })
+        const sheet = workbook.Sheets[workbook.SheetNames[0]]
+        const rows = XLSX.utils.sheet_to_json<Record<string, string>>(sheet)
+
+        if (rows.length === 0) {
+          setImportError("File is empty or has no data rows.")
+          return
+        }
+
+        // Normalize column names to lowercase
+        const normalizedRows = rows.map((row) => {
+          const normalized: Record<string, string> = {}
+          for (const key of Object.keys(row)) {
+            normalized[key.trim().toLowerCase()] = String(row[key] || "").trim()
+          }
+          return normalized
+        })
+
+        // Validate required column: Name
+        const first = normalizedRows[0]
+        if (!("name" in first)) {
+          setImportError("Excel must have a 'Name' column.")
+          return
+        }
+
+        // Parse vendor rows
+        const vendorList = normalizedRows
+          .filter((r) => r["name"]?.trim())
+          .map((r) => ({
+            name: r["name"] || "",
+            phone: r["phone"] || "",
+            email: r["email"] || "",
+            gst: r["gst"] || "",
+            address: r["address"] || "",
+          }))
+
+        if (vendorList.length === 0) {
+          setImportError("No valid vendor rows found in file.")
+          return
+        }
+
+        // Send to backend for bulk import with server-side duplicate checking
+        const res = await fetch(apiUrl("/api/vendors/bulk-import"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ vendors: vendorList }),
+        })
+
+        if (!res.ok) {
+          const err = await res.json()
+          setImportError(err.message || "Failed to import vendors.")
+          return
+        }
+
+        const result = await res.json()
+        setImportSummary({ imported: result.imported || 0, skipped: result.skipped || 0 })
+        await fetchVendors()
+      } catch {
+        setImportError("Failed to parse file. Please check the format.")
+      }
+    }
+    reader.readAsBinaryString(file)
+
+    if (fileInputRef.current) fileInputRef.current.value = ""
+  }
+
   useEffect(() => {
     fetchVendors()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -159,8 +259,31 @@ export default function VendorsPage() {
             <h1 className="text-2xl font-semibold text-gray-800">Vendors</h1>
             <p className="text-sm text-gray-500">Manage vendor contacts for procurement.</p>
           </div>
-          <Button onClick={() => openModal()}>+ New Vendor</Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={downloadSampleFile}>
+              <Download className="h-4 w-4 mr-1" />
+              Download Sample
+            </Button>
+            <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+              <Upload className="h-4 w-4 mr-1" />
+              Import Vendors
+            </Button>
+            <input ref={fileInputRef} type="file" accept=".xlsx,.csv" className="hidden" onChange={handleImportFile} />
+            <Button onClick={() => openModal()}>+ New Vendor</Button>
+          </div>
         </div>
+
+        {/* Import Summary */}
+        {importSummary && (
+          <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+            Imported: <strong>{importSummary.imported}</strong> vendors. Skipped duplicates: <strong>{importSummary.skipped}</strong> vendors.
+          </div>
+        )}
+
+        {/* Import Error */}
+        {importError && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{importError}</div>
+        )}
 
         <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
           <table className="min-w-full text-sm">

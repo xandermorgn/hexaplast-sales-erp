@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { useEffect, useMemo, useState, useCallback, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { Printer, Pencil, Trash2 } from "lucide-react"
 import { DashboardLayout } from "@/components/dashboard-layout"
@@ -13,6 +13,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
 import { useCategories } from "@/hooks/use-categories"
 import { apiUrl } from "@/lib/api"
+import { useSilentRefresh } from "@/hooks/use-silent-refresh"
 import { parseNum } from "@/lib/parse-number"
 import { FollowUpSection } from "@/components/follow-up-section"
 
@@ -103,6 +104,14 @@ type DocumentDefaults = {
   attention: string
   declaration: string
   special_notes: string
+}
+
+type TermsTemplate = {
+  id: number
+  document_type: string
+  title: string
+  content: string
+  is_active: number
 }
 
 const emptyItem = (): QuotationItemForm => ({
@@ -234,6 +243,8 @@ export default function QuotationsPage() {
     declaration: "",
     special_notes: "",
   })
+  const [termsType, setTermsType] = useState<string>("")
+  const [quotationTermsTemplates, setQuotationTermsTemplates] = useState<TermsTemplate[]>([])
 
   const selectedInquiry = useMemo(
     () => inquiries.find((inquiry) => String(inquiry.id) === inquiryId) || null,
@@ -367,9 +378,39 @@ export default function QuotationsPage() {
     }
   }
 
+  async function fetchQuotationTermsTemplates() {
+    try {
+      const res = await fetch(apiUrl("/api/terms-conditions?document_type=quotation&active=1"), { credentials: "include" })
+      if (res.ok) {
+        const data = await res.json()
+        setQuotationTermsTemplates(data.terms || [])
+      }
+    } catch { /* ignore */ }
+  }
+
+  function applyTermsType(type: string) {
+    setTermsType(type)
+    if (!type) return
+
+    const findTemplate = (title: string) =>
+      quotationTermsTemplates.find((t) => t.title.toLowerCase().includes(title.toLowerCase()))?.content || ""
+
+    if (type === "export") {
+      setAttention(findTemplate("attention"))
+      setSpecialNotes(findTemplate("special note"))
+      setDeclaration(findTemplate("declaration"))
+      setTermsConditions(findTemplate("general terms") || findTemplate("export terms"))
+    } else if (type === "general") {
+      setTermsConditions(findTemplate("general terms"))
+      setAttention("")
+      setDeclaration("")
+      setSpecialNotes("")
+    }
+  }
+
   async function loadAll() {
     try {
-      await Promise.all([fetchInquiries(), fetchProducts(), fetchQuotations(), fetchDocumentDefaults(true)])
+      await Promise.all([fetchInquiries(), fetchProducts(), fetchQuotations(), fetchDocumentDefaults(true), fetchQuotationTermsTemplates()])
     } catch {
       toast({ title: "Error", description: "Failed to load quotation module data", variant: "destructive" })
     }
@@ -379,6 +420,12 @@ export default function QuotationsPage() {
     loadAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Silent background refresh every 30s
+  const silentRefresh = useCallback(async () => {
+    await Promise.all([fetchInquiries(), fetchQuotations()])
+  }, [])
+  useSilentRefresh(silentRefresh, 30000)
 
   function resetForm() {
     setEditingId(null)
@@ -731,22 +778,38 @@ export default function QuotationsPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label>Terms & Conditions</Label>
-              <Textarea rows={3} value={termsConditions} onChange={(e) => setTermsConditions(e.target.value)} />
+          {/* Terms & Conditions Section */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-4">
+              <h3 className="font-medium text-gray-800">Terms & Conditions</h3>
+              <select
+                className="border border-gray-300 rounded-md h-9 px-3 text-sm"
+                value={termsType}
+                onChange={(e) => applyTermsType(e.target.value)}
+              >
+                <option value="">Select Terms Type</option>
+                <option value="export">Export Terms</option>
+                <option value="general">General Terms</option>
+              </select>
             </div>
-            <div>
-              <Label>Attention</Label>
-              <Textarea rows={3} value={attention} onChange={(e) => setAttention(e.target.value)} />
-            </div>
-            <div>
-              <Label>Declaration</Label>
-              <Textarea rows={3} value={declaration} onChange={(e) => setDeclaration(e.target.value)} />
-            </div>
-            <div>
-              <Label>Special Notes</Label>
-              <Textarea rows={3} value={specialNotes} onChange={(e) => setSpecialNotes(e.target.value)} />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label>Terms & Conditions</Label>
+                <Textarea rows={3} value={termsConditions} onChange={(e) => setTermsConditions(e.target.value)} />
+              </div>
+              <div>
+                <Label>Attention</Label>
+                <Textarea rows={3} value={attention} onChange={(e) => setAttention(e.target.value)} />
+              </div>
+              <div>
+                <Label>Declaration</Label>
+                <Textarea rows={3} value={declaration} onChange={(e) => setDeclaration(e.target.value)} />
+              </div>
+              <div>
+                <Label>Special Notes</Label>
+                <Textarea rows={3} value={specialNotes} onChange={(e) => setSpecialNotes(e.target.value)} />
+              </div>
             </div>
           </div>
 

@@ -161,6 +161,7 @@ export function DashboardLayout({
   const [ripples, setRipples] = useState<{ id: number; x: number; y: number; buttonId: string }[]>([])
   const rippleIdRef = useRef(0)
   const notificationRef = useRef<HTMLDivElement>(null)
+  const sentBrowserNotifs = useRef<Set<string>>(new Set())
 
   const [internalNotifications, setInternalNotifications] = useState<Notification[]>([])
 
@@ -174,23 +175,55 @@ export function DashboardLayout({
         if (!res.ok || cancelled) return
         const data = await res.json()
         const due = data.follow_ups || []
+        const upcoming = data.upcoming || []
 
-        if (due.length > 0) {
-          const mapped: Notification[] = due.map((f: any) => ({
+        const allNotifs: Notification[] = []
+
+        // Due follow-ups (already past reminder time)
+        for (const f of due) {
+          allNotifs.push({
             id: `followup-${f.id}`,
-            title: `Reminder: ${f.note || "Follow-up due"}`,
-            message: `${f.entity_type} follow-up is due`,
+            title: `Due Now: ${f.note || "Follow-up reminder"}`,
+            message: `${f.entity_type} follow-up is due now`,
             time: new Date(f.reminder_datetime),
             read: false,
-          }))
-          setInternalNotifications(mapped)
+          })
+        }
 
-          // Browser notification
+        // Upcoming follow-ups (within next 30 min)
+        for (const f of upcoming) {
+          const mins = Math.round((new Date(f.reminder_datetime).getTime() - Date.now()) / 60000)
+          allNotifs.push({
+            id: `followup-upcoming-${f.id}`,
+            title: `Upcoming: ${f.note || "Follow-up reminder"}`,
+            message: `${f.entity_type} follow-up in ${mins} min`,
+            time: new Date(f.reminder_datetime),
+            read: false,
+          })
+        }
+
+        if (allNotifs.length > 0) {
+          setInternalNotifications((prev) => {
+            // Preserve read state for existing notifications
+            const readIds = new Set(prev.filter((n) => n.read).map((n) => n.id))
+            return allNotifs.map((n) => ({ ...n, read: readIds.has(n.id) }))
+          })
+
+          // Browser notification for NEW due items only
           if (typeof window !== "undefined" && "Notification" in window && window.Notification.permission === "granted") {
-            for (const n of mapped) {
-              new window.Notification(n.title, { body: n.message })
+            for (const f of due) {
+              const nId = `followup-${f.id}`
+              // Only send browser notification once per follow-up
+              if (!sentBrowserNotifs.current.has(nId)) {
+                sentBrowserNotifs.current.add(nId)
+                new window.Notification(`Due: ${f.note || "Follow-up reminder"}`, {
+                  body: `${f.entity_type} follow-up is due now`,
+                })
+              }
             }
           }
+        } else {
+          setInternalNotifications([])
         }
       } catch {
         // ignore polling errors
@@ -207,9 +240,33 @@ export function DashboardLayout({
     return () => { cancelled = true; clearInterval(interval) }
   }, [])
 
+  // First-login welcome notification
+  const [showWelcome, setShowWelcome] = useState(false)
+  useEffect(() => {
+    const dismissed = sessionStorage.getItem("welcome_dismissed")
+    if (dismissed) return
+    // Check if profile is incomplete (no email & no phone set) → new user
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/profile/me", { credentials: "include" })
+        if (!res.ok) return
+        const data = await res.json()
+        const p = data?.profile
+        if (p && !p.personal_email && !p.personal_phone) {
+          setShowWelcome(true)
+        }
+      } catch { /* ignore */ }
+    }, 2000) // slight delay for smooth UX
+    return () => clearTimeout(timer)
+  }, [])
+
+  function dismissWelcome() {
+    setShowWelcome(false)
+    sessionStorage.setItem("welcome_dismissed", "1")
+  }
+
   const notifications = externalNotifications || internalNotifications
   const unreadCount = notifications.filter((n) => !n.read).length
-  const isEmployee = userRole === "employee"
 
   useEffect(() => {
     let cancelled = false
@@ -301,12 +358,18 @@ export function DashboardLayout({
   const handleNotificationRead = (id: string) => {
     if (onNotificationRead) {
       onNotificationRead(id)
+    } else {
+      // Handle internal notifications
+      setInternalNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n))
     }
   }
 
   const handleClearAll = () => {
     if (onClearAllNotifications) {
       onClearAllNotifications()
+    } else {
+      // Mark all internal notifications as read
+      setInternalNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
     }
     setShowNotifications(false)
   }
@@ -343,9 +406,8 @@ export function DashboardLayout({
 
         {/* Notification Bell and Profile on the right */}
         <div className="flex items-center gap-3">
-          {/* Notification Bell - Only for employees */}
-          {isEmployee && (
-            <div className="relative" ref={notificationRef}>
+          {/* Notification Bell */}
+          <div className="relative" ref={notificationRef}>
               <button
                 onClick={() => setShowNotifications(!showNotifications)}
                 className="relative p-2 rounded-full hover:bg-gray-100 transition-colors"
@@ -436,7 +498,6 @@ export function DashboardLayout({
                 </div>
               )}
             </div>
-          )}
 
           {/* Profile Dropdown */}
           <DropdownMenu>
@@ -652,6 +713,40 @@ export function DashboardLayout({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* First-login Welcome Notification */}
+      {showWelcome && (
+        <div className="fixed bottom-6 right-6 z-[60] animate-in slide-in-from-bottom-5 fade-in duration-500">
+          <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 p-5 max-w-sm space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center flex-shrink-0">
+                <span className="text-white text-lg">👋</span>
+              </div>
+              <div>
+                <h4 className="font-semibold text-gray-900">Welcome to Hexaplast ERP!</h4>
+                <p className="text-sm text-gray-500 mt-1">
+                  Complete your profile by adding your email, phone number, or updating your display name.
+                </p>
+              </div>
+              <button onClick={dismissWelcome} className="text-gray-400 hover:text-gray-600 flex-shrink-0 -mt-1 -mr-1">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex gap-2 pl-[52px]">
+              <Button
+                size="sm"
+                className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white text-xs"
+                onClick={() => { dismissWelcome(); setShowProfileModal(true) }}
+              >
+                Complete Profile
+              </Button>
+              <Button size="sm" variant="outline" className="text-xs" onClick={dismissWelcome}>
+                Maybe Later
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

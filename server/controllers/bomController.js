@@ -340,7 +340,12 @@ export function getPurchaseMaterials(req, res) {
         mp.product_name AS machine_name,
         v.name AS vendor_name,
         v.phone AS vendor_phone,
-        v.email AS vendor_email
+        v.email AS vendor_email,
+        (SELECT COUNT(*) FROM purchase_inquiries pi WHERE pi.bom_material_id = bm.id) AS inquiry_count,
+        (SELECT COUNT(*) FROM purchase_inquiries pi WHERE pi.bom_material_id = bm.id AND pi.status = 'sent') AS inquiry_pending_count,
+        (SELECT COUNT(*) FROM purchase_inquiries pi 
+         JOIN inquiry_vendor_responses ivr ON ivr.inquiry_id = pi.id 
+         WHERE pi.bom_material_id = bm.id) AS inquiry_responded_count
       FROM bom_materials bm
       JOIN work_order_boms b ON bm.bom_id = b.id
       LEFT JOIN work_orders wo ON b.work_order_id = wo.id

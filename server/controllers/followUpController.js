@@ -196,6 +196,7 @@ export function deleteFollowUp(req, res) {
 export function getDueFollowUps(req, res) {
   try {
     const now = new Date().toISOString();
+    const thirtyMinFromNow = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
     // Auto-mark overdue (> 1 hour past) as missed
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -215,7 +216,17 @@ export function getDueFollowUps(req, res) {
       [now]
     );
 
-    return res.status(200).json({ follow_ups: due, count: due.length });
+    // Get upcoming (pending and reminder_datetime within next 30 minutes)
+    const upcoming = query(
+      `SELECT f.*, u.name AS employee_name
+       FROM follow_ups f
+       LEFT JOIN users u ON f.employee_id = u.id
+       WHERE f.status = 'pending' AND f.reminder_datetime > ? AND f.reminder_datetime <= ?
+       ORDER BY f.reminder_datetime ASC`,
+      [now, thirtyMinFromNow]
+    );
+
+    return res.status(200).json({ follow_ups: due, upcoming, count: due.length + upcoming.length });
   } catch (error) {
     console.error('Get due follow-ups error:', error);
     return res.status(500).json({ error: 'Internal server error', message: 'Failed to fetch due follow-ups' });

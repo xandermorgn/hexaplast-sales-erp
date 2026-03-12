@@ -7,6 +7,17 @@ import { get, query, run } from '../config/database.js';
 import { logAudit, AUDIT_ACTIONS, ENTITY_TYPES } from '../utils/auditLogger.js';
 
 /**
+ * Generate a part number from name + specification.
+ * Format: PARTNAME-SPEC (uppercase, no spaces, no special chars except hyphen)
+ */
+function generatePartNumber(name, spec) {
+  const cleanName = (name || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const cleanSpec = (spec || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!cleanName) return '';
+  return cleanSpec ? `${cleanName}-${cleanSpec}` : cleanName;
+}
+
+/**
  * GET /api/products/machines/:machineId/parts
  * List all parts for a machine
  */
@@ -46,12 +57,23 @@ export function addPart(req, res) {
       return res.status(400).json({ error: 'Validation error', message: 'Part name is required' });
     }
 
+    // Duplicate protection: check name + specification + machine_id
+    const existing = get(
+      `SELECT id FROM machine_parts WHERE machine_id = ? AND LOWER(TRIM(part_name)) = ? AND LOWER(TRIM(COALESCE(specification, ''))) = ?`,
+      [machineId, part_name.trim().toLowerCase(), (specification || '').trim().toLowerCase()]
+    );
+    if (existing) {
+      return res.status(409).json({ error: 'Duplicate', message: 'This part already exists for this machine.' });
+    }
+
+    const finalPartNumber = part_number || generatePartNumber(part_name, specification);
+
     const result = run(
       `INSERT INTO machine_parts (machine_id, part_number, part_name, specification, unit, default_quantity)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [
         machineId,
-        part_number || null,
+        finalPartNumber || null,
         part_name.trim(),
         specification || null,
         unit || 'Nos',
@@ -181,20 +203,36 @@ export function bulkSaveParts(req, res) {
       return res.status(400).json({ error: 'Validation error', message: 'parts must be an array' });
     }
 
+    // Server-side duplicate detection within the submitted list
+    const seen = new Set();
+    for (const part of parts) {
+      if (!part.part_name || !part.part_name.trim()) continue;
+      const key = `${part.part_name.trim().toLowerCase()}|${(part.specification || '').trim().toLowerCase()}`;
+      if (seen.has(key)) {
+        return res.status(409).json({
+          error: 'Duplicate',
+          message: `This part already exists for this machine: "${part.part_name}" with specification "${part.specification || '-'}".`
+        });
+      }
+      seen.add(key);
+    }
+
     // Delete existing parts
     run('DELETE FROM machine_parts WHERE machine_id = ?', [machineId]);
 
-    // Insert new parts
+    // Insert new parts with auto-generated part numbers
     const inserted = [];
     for (const part of parts) {
       if (!part.part_name || !part.part_name.trim()) continue;
+
+      const finalPartNumber = part.part_number || generatePartNumber(part.part_name, part.specification);
 
       const result = run(
         `INSERT INTO machine_parts (machine_id, part_number, part_name, specification, unit, default_quantity)
          VALUES (?, ?, ?, ?, ?, ?)`,
         [
           machineId,
-          part.part_number || null,
+          finalPartNumber || null,
           part.part_name.trim(),
           part.specification || null,
           part.unit || 'Nos',

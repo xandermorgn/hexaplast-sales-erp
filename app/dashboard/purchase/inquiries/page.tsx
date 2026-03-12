@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
 import { apiUrl } from "@/lib/api"
-import { Check, DollarSign } from "lucide-react"
+import { Check, ChevronDown, ChevronRight } from "lucide-react"
 
 type Inquiry = {
   id: number
@@ -42,6 +42,7 @@ const menuItems = [
   { id: "inquiries", label: "Inquiries" },
   { id: "purchase-orders", label: "Purchase Orders" },
   { id: "vendors", label: "Vendors" },
+  { id: "products", label: "Products" },
 ]
 
 export default function InquiriesPage() {
@@ -54,10 +55,12 @@ export default function InquiriesPage() {
   const [priceInputs, setPriceInputs] = useState<Record<number, { unit_price: string; remarks: string }>>({})
   const [savingId, setSavingId] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState<"all" | "pending" | "responded">("all")
+  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set())
 
   function handleSectionChange(section: string) {
     const routeMap: Record<string, string> = {
       "pending-work-orders": "/dashboard/purchase/pending-work-orders",
+      products: "/dashboard/purchase/products",
       bom: "/dashboard/purchase/bom",
       purchase: "/dashboard/purchase/purchase",
       inquiries: "/dashboard/purchase/inquiries",
@@ -73,7 +76,16 @@ export default function InquiriesPage() {
       const res = await fetch(apiUrl("/api/purchase/inquiries"), { credentials: "include" })
       if (!res.ok) throw new Error("Failed to fetch")
       const data = await res.json()
-      setInquiries(data.inquiries || [])
+      const fetched: Inquiry[] = data.inquiries || []
+      setInquiries(fetched)
+
+      // Auto-expand only the newest material group (first after sort)
+      if (fetched.length > 0) {
+        const groups = buildGroups(fetched)
+        if (groups.length > 0) {
+          setExpandedGroups(new Set([groups[0].bom_material_id]))
+        }
+      }
     } catch {
       toast({ title: "Error", description: "Failed to load inquiries", variant: "destructive" })
     }
@@ -121,7 +133,6 @@ export default function InquiriesPage() {
       }
 
       toast({ title: "Saved", description: `Price saved for ${inquiry.vendor_name}` })
-      // Clear input
       setPriceInputs((prev) => {
         const copy = { ...prev }
         delete copy[inquiry.id]
@@ -135,6 +146,18 @@ export default function InquiriesPage() {
     }
   }
 
+  function toggleGroup(bomMaterialId: number) {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(bomMaterialId)) {
+        next.delete(bomMaterialId)
+      } else {
+        next.add(bomMaterialId)
+      }
+      return next
+    })
+  }
+
   // Group inquiries by material
   type MaterialGroup = {
     bom_material_id: number
@@ -146,11 +169,12 @@ export default function InquiriesPage() {
     machine_name: string | null
     machine_index: number
     inquiries: Inquiry[]
+    latestDate: string
   }
 
-  const materialGroups: MaterialGroup[] = (() => {
+  function buildGroups(inqs: Inquiry[]): MaterialGroup[] {
     const map: Record<number, MaterialGroup> = {}
-    for (const inq of inquiries) {
+    for (const inq of inqs) {
       if (!map[inq.bom_material_id]) {
         map[inq.bom_material_id] = {
           bom_material_id: inq.bom_material_id,
@@ -162,12 +186,20 @@ export default function InquiriesPage() {
           machine_name: inq.machine_name,
           machine_index: inq.machine_index,
           inquiries: [],
+          latestDate: inq.created_at,
         }
       }
       map[inq.bom_material_id].inquiries.push(inq)
+      // Track latest date for sorting
+      if (inq.created_at > map[inq.bom_material_id].latestDate) {
+        map[inq.bom_material_id].latestDate = inq.created_at
+      }
     }
-    return Object.values(map)
-  })()
+    // Sort newest first
+    return Object.values(map).sort((a, b) => b.latestDate.localeCompare(a.latestDate))
+  }
+
+  const materialGroups = buildGroups(inquiries)
 
   // Filter based on active tab
   const filtered = materialGroups.filter((group) => {
@@ -223,131 +255,144 @@ export default function InquiriesPage() {
           </div>
         ) : (
           filtered.map((group) => {
-            // Check if all inquiries for this material have responses
             const allResponded = group.inquiries.every((i) => i.latest_unit_price !== null)
-            // Find lowest price
             const respondedInqs = group.inquiries.filter((i) => i.latest_unit_price !== null)
             const lowestPrice = respondedInqs.length > 0
               ? Math.min(...respondedInqs.map((i) => i.latest_unit_price!))
               : null
+            const isExpanded = expandedGroups.has(group.bom_material_id)
 
             return (
               <div key={group.bom_material_id} className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-                {/* Material header */}
-                <div className="bg-gray-50 px-4 py-3 flex items-center justify-between">
-                  <div>
-                    <span className="font-semibold text-gray-800">{group.part_name}</span>
-                    {group.specification && <span className="text-gray-400 text-sm ml-2">({group.specification})</span>}
-                    <span className="text-gray-500 text-sm ml-3">Qty: {group.quantity} {group.unit}</span>
-                    {group.work_order_number && (
-                      <span className="text-gray-400 text-xs ml-3">{group.work_order_number} • {group.machine_name} #{group.machine_index}</span>
+                {/* Material header — clickable to expand/collapse */}
+                <div
+                  className="bg-gray-50 px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-100 transition-colors"
+                  onClick={() => toggleGroup(group.bom_material_id)}
+                >
+                  <div className="flex items-center gap-2">
+                    {isExpanded ? <ChevronDown className="h-4 w-4 text-gray-500" /> : <ChevronRight className="h-4 w-4 text-gray-500" />}
+                    <div>
+                      <span className="font-semibold text-gray-800">{group.part_name}</span>
+                      {group.specification && <span className="text-gray-400 text-sm ml-2">({group.specification})</span>}
+                      <span className="text-gray-500 text-sm ml-3">Qty: {group.quantity} {group.unit}</span>
+                      {group.work_order_number && (
+                        <span className="text-gray-400 text-xs ml-3">{group.work_order_number} • {group.machine_name} #{group.machine_index}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {!isExpanded && respondedInqs.length > 0 && (
+                      <span className="text-xs text-gray-500">
+                        {respondedInqs.length}/{group.inquiries.length} responded
+                        {lowestPrice !== null && <span className="ml-2 font-medium text-green-700">Lowest: ₹{lowestPrice.toFixed(2)}</span>}
+                      </span>
+                    )}
+                    {allResponded && respondedInqs.length >= 2 && (
+                      <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">
+                        All prices received
+                      </span>
                     )}
                   </div>
-                  {allResponded && respondedInqs.length >= 2 && (
-                    <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">
-                      All prices received
-                    </span>
-                  )}
                 </div>
 
-                {/* Vendor inquiry rows */}
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="border-t text-gray-500 text-xs">
-                      <th className="px-4 py-1.5 text-left">Vendor</th>
-                      <th className="px-4 py-1.5 text-left">Status</th>
-                      <th className="px-4 py-1.5 text-left">Unit Price</th>
-                      <th className="px-4 py-1.5 text-left">Total</th>
-                      <th className="px-4 py-1.5 text-left">Remarks</th>
-                      <th className="px-4 py-1.5 text-left">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {group.inquiries.map((inq) => {
-                      const input = getPriceInput(inq.id)
-                      const isLowest = lowestPrice !== null && inq.latest_unit_price === lowestPrice
-                      return (
-                        <tr key={inq.id} className={`border-t hover:bg-gray-50 ${isLowest && inq.latest_unit_price !== null ? "bg-green-50" : ""}`}>
-                          <td className="px-4 py-2 font-medium">{inq.vendor_name}</td>
-                          <td className="px-4 py-2">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[inq.status] || "bg-gray-100 text-gray-700"}`}>
-                              {inq.status}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2">
-                            {inq.latest_unit_price !== null ? (
-                              <span className={`font-medium ${isLowest ? "text-green-700" : ""}`}>
-                                ₹{inq.latest_unit_price.toFixed(2)}
-                                {isLowest && <span className="ml-1 text-xs">✓ Lowest</span>}
+                {/* Vendor inquiry rows — only when expanded */}
+                {isExpanded && (
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-t text-gray-500 text-xs">
+                        <th className="px-4 py-1.5 text-left">Vendor</th>
+                        <th className="px-4 py-1.5 text-left">Status</th>
+                        <th className="px-4 py-1.5 text-left">Unit Price</th>
+                        <th className="px-4 py-1.5 text-left">Total</th>
+                        <th className="px-4 py-1.5 text-left">Remarks</th>
+                        <th className="px-4 py-1.5 text-left">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.inquiries.map((inq) => {
+                        const input = getPriceInput(inq.id)
+                        const isLowest = lowestPrice !== null && inq.latest_unit_price === lowestPrice
+                        return (
+                          <tr key={inq.id} className={`border-t hover:bg-gray-50 ${isLowest && inq.latest_unit_price !== null ? "bg-green-50" : ""}`}>
+                            <td className="px-4 py-2 font-medium">{inq.vendor_name}</td>
+                            <td className="px-4 py-2">
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[inq.status] || "bg-gray-100 text-gray-700"}`}>
+                                {inq.status}
                               </span>
-                            ) : (
-                              <Input
-                                type="number"
-                                step="0.01"
-                                placeholder="Enter price"
-                                value={input.unit_price}
-                                onChange={(e) => setPriceField(inq.id, "unit_price", e.target.value)}
-                                className="h-8 w-28 text-sm"
-                              />
-                            )}
-                          </td>
-                          <td className="px-4 py-2 text-gray-500">
-                            {inq.latest_total_price !== null ? `₹${inq.latest_total_price.toFixed(2)}` : "-"}
-                          </td>
-                          <td className="px-4 py-2">
-                            {inq.latest_remarks || (
-                              inq.latest_unit_price === null ? (
+                            </td>
+                            <td className="px-4 py-2">
+                              {inq.latest_unit_price !== null ? (
+                                <span className={`font-medium ${isLowest ? "text-green-700" : ""}`}>
+                                  ₹{inq.latest_unit_price.toFixed(2)}
+                                  {isLowest && <span className="ml-1 text-xs">✓ Lowest</span>}
+                                </span>
+                              ) : (
                                 <Input
-                                  placeholder="Remarks"
-                                  value={input.remarks}
-                                  onChange={(e) => setPriceField(inq.id, "remarks", e.target.value)}
-                                  className="h-8 w-32 text-sm"
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="Enter price"
+                                  value={input.unit_price}
+                                  onChange={(e) => setPriceField(inq.id, "unit_price", e.target.value)}
+                                  className="h-8 w-28 text-sm"
                                 />
-                              ) : <span className="text-gray-400">-</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-2">
-                            {inq.latest_unit_price === null ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={!input.unit_price || savingId === inq.id}
-                                onClick={() => saveResponse(inq)}
-                                className="text-xs"
-                              >
-                                <Check className="h-3 w-3 mr-1" />
-                                {savingId === inq.id ? "Saving..." : "Save Price"}
-                              </Button>
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="text-xs text-gray-500"
-                                onClick={() => {
-                                  // Allow re-entry by resetting
-                                  setPriceInputs((prev) => ({
-                                    ...prev,
-                                    [inq.id]: { unit_price: String(inq.latest_unit_price), remarks: inq.latest_remarks || "" },
-                                  }))
-                                  // Clear latest so it shows input again – re-fetch will reset
-                                  setInquiries((prev) =>
-                                    prev.map((i) =>
-                                      i.id === inq.id
-                                        ? { ...i, latest_unit_price: null, latest_total_price: null, latest_remarks: null, status: "sent" }
-                                        : i
+                              )}
+                            </td>
+                            <td className="px-4 py-2 text-gray-500">
+                              {inq.latest_total_price !== null ? `₹${inq.latest_total_price.toFixed(2)}` : "-"}
+                            </td>
+                            <td className="px-4 py-2">
+                              {inq.latest_remarks || (
+                                inq.latest_unit_price === null ? (
+                                  <Input
+                                    placeholder="Remarks"
+                                    value={input.remarks}
+                                    onChange={(e) => setPriceField(inq.id, "remarks", e.target.value)}
+                                    className="h-8 w-32 text-sm"
+                                  />
+                                ) : <span className="text-gray-400">-</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2">
+                              {inq.latest_unit_price === null ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={!input.unit_price || savingId === inq.id}
+                                  onClick={() => saveResponse(inq)}
+                                  className="text-xs"
+                                >
+                                  <Check className="h-3 w-3 mr-1" />
+                                  {savingId === inq.id ? "Saving..." : "Save Price"}
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-xs text-gray-500"
+                                  onClick={() => {
+                                    setPriceInputs((prev) => ({
+                                      ...prev,
+                                      [inq.id]: { unit_price: String(inq.latest_unit_price), remarks: inq.latest_remarks || "" },
+                                    }))
+                                    setInquiries((prev) =>
+                                      prev.map((i) =>
+                                        i.id === inq.id
+                                          ? { ...i, latest_unit_price: null, latest_total_price: null, latest_remarks: null, status: "sent" }
+                                          : i
+                                      )
                                     )
-                                  )
-                                }}
-                              >
-                                Edit
-                              </Button>
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                                  }}
+                                >
+                                  Edit
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )}
               </div>
             )
           })
