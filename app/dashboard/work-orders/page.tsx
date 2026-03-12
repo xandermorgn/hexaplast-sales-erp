@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
-import { Printer, Pencil, Trash2 } from "lucide-react"
+import { Printer, Pencil, Trash2, Search } from "lucide-react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,6 +16,7 @@ import { apiUrl } from "@/lib/api"
 import { useSilentRefresh } from "@/hooks/use-silent-refresh"
 import { parseNum } from "@/lib/parse-number"
 import { FollowUpSection } from "@/components/follow-up-section"
+import { MultiSelectFilter } from "@/components/ui/multi-select-filter"
 
 type Inquiry = {
   id: number
@@ -207,6 +208,12 @@ export default function WorkOrdersPage() {
   const [advanceDate, setAdvanceDate] = useState("")
   const [advanceDescription, setAdvanceDescription] = useState("")
   const [advanceAmount, setAdvanceAmount] = useState("0")
+  const [pendingFollowUps, setPendingFollowUps] = useState<{ note: string; reminder_date: string }[]>([])
+  const [subcategories, setSubcategories] = useState<{ id: number; name: string; products: { product_id: number; product_type: string; sales_price: number | null; gst_percent: number | null }[] }[]>([])
+
+  // List filters
+  const [searchQuery, setSearchQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState<string[]>([])
 
   const selectedInquiry = useMemo(
     () => inquiries.find((inq) => String(inq.id) === inquiryId) || null,
@@ -261,24 +268,30 @@ export default function WorkOrdersPage() {
 
   const filteredWorkOrders = useMemo(() => {
     return workOrders.filter((wo) => {
-      if (!wo.created_at) return true
-
-      const created = new Date(wo.created_at)
-      if (Number.isNaN(created.getTime())) return true
-
-      if (filters.from_date) {
-        const fromDate = new Date(`${filters.from_date}T00:00:00`)
-        if (created < fromDate) return false
+      if (wo.created_at) {
+        const created = new Date(wo.created_at)
+        if (!Number.isNaN(created.getTime())) {
+          if (filters.from_date && created < new Date(`${filters.from_date}T00:00:00`)) return false
+          if (filters.to_date && created > new Date(`${filters.to_date}T23:59:59`)) return false
+        }
       }
-
-      if (filters.to_date) {
-        const toDate = new Date(`${filters.to_date}T23:59:59`)
-        if (created > toDate) return false
+      if (statusFilter.length > 0 && !statusFilter.includes(wo.status || "generated")) return false
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase()
+        const match =
+          (wo.work_order_number || "").toLowerCase().includes(q) ||
+          (wo.company_name || "").toLowerCase().includes(q) ||
+          (wo.inquiry_number || "").toLowerCase().includes(q)
+        if (!match) return false
       }
-
       return true
     })
-  }, [workOrders, filters.from_date, filters.to_date])
+  }, [workOrders, filters.from_date, filters.to_date, statusFilter, searchQuery])
+
+  const allStatuses = useMemo(() => {
+    const s = new Set(workOrders.map((wo) => wo.status || "generated"))
+    return Array.from(s).sort()
+  }, [workOrders])
 
   async function fetchInquiries() {
     const response = await fetch(apiUrl("/api/inquiries"), { credentials: "include" })
@@ -338,9 +351,56 @@ export default function WorkOrdersPage() {
     setWorkOrders(data.work_orders || [])
   }
 
+  async function fetchSubcategories() {
+    try {
+      const res = await fetch(apiUrl("/api/products/subcategories"), { credentials: "include" })
+      if (!res.ok) return
+      const data = await res.json()
+      const subs: typeof subcategories = []
+      for (const sc of (data.subcategories || [])) {
+        try {
+          const detRes = await fetch(apiUrl(`/api/products/subcategories/${sc.id}`), { credentials: "include" })
+          if (detRes.ok) {
+            const det = await detRes.json()
+            subs.push({ id: sc.id, name: sc.name, products: det.products || [] })
+          }
+        } catch { /* ignore */ }
+      }
+      setSubcategories(subs)
+    } catch { /* ignore */ }
+  }
+
+  function onSelectSubcategory(subcatId: number) {
+    const sc = subcategories.find((s) => s.id === subcatId)
+    if (!sc || !sc.products.length) return
+    const newItems: WOItemForm[] = sc.products.map((p) => {
+      const prodOpt = products.find((o) => o.product_id === p.product_id && o.product_type === p.product_type)
+      return {
+        product_key: `${p.product_type}-${p.product_id}`,
+        product_type: p.product_type as "machine" | "spare",
+        product_id: p.product_id,
+        category_name: prodOpt?.category_name || "",
+        sub_category: prodOpt?.sub_category || "",
+        product_name: prodOpt?.product_name || "",
+        model_number: prodOpt?.model_number || "",
+        hsn_sac_code: prodOpt?.hsn_sac_code || "",
+        unit: prodOpt?.unit || "Nos",
+        quantity: "1",
+        price: String(p.sales_price || prodOpt?.sales_price || 0),
+        discount_percent: "0",
+        discount_amount: "0",
+        gst_percent: String(p.gst_percent || prodOpt?.gst_percent || 0),
+      }
+    })
+    setItems((prev) => {
+      const nonEmpty = prev.filter((it) => it.product_id)
+      return [...nonEmpty, ...newItems]
+    })
+  }
+
   async function loadAll() {
     try {
-      await Promise.all([fetchInquiries(), fetchProducts(), fetchWorkOrders()])
+      await Promise.all([fetchInquiries(), fetchProducts(), fetchWorkOrders(), fetchSubcategories()])
     } catch {
       toast({ title: "Error", description: "Failed to load work order module data", variant: "destructive" })
     }
@@ -374,6 +434,7 @@ export default function WorkOrdersPage() {
     setAdvanceDate("")
     setAdvanceDescription("")
     setAdvanceAmount("0")
+    setPendingFollowUps([])
   }
 
   function openCreateForm() {
@@ -474,6 +535,22 @@ export default function WorkOrdersPage() {
       if (!response.ok) {
         setFormError(data?.message || "Failed to save work order")
         return
+      }
+
+      // Create pending follow-ups
+      const savedId = editingId || data?.work_order?.id
+      if (!isUpdate && pendingFollowUps.length > 0 && savedId) {
+        for (const pf of pendingFollowUps) {
+          try {
+            await fetch(apiUrl("/api/followups"), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ entity_type: "workorder", entity_id: savedId, note: pf.note || null, reminder_datetime: `${pf.reminder_date}T09:00:00` }),
+            })
+          } catch { /* ignore */ }
+        }
+        setPendingFollowUps([])
       }
 
       toast({ title: "Success", description: isUpdate ? "Work order updated" : "Work order saved" })
@@ -819,18 +896,34 @@ export default function WorkOrdersPage() {
             <div className="col-span-full md:col-span-1"><span className="font-medium">Total:</span> {summary.totalAmount.toFixed(2)}</div>
           </div>
 
+          {/* Follow-Up Section — above buttons */}
+          <FollowUpSection
+            entityType="workorder"
+            entityId={editingId}
+            pendingFollowUps={pendingFollowUps}
+            onPendingChange={setPendingFollowUps}
+          />
+
+          {pendingFollowUps.length > 0 && !editingId && (
+            <div className="text-xs text-gray-500">{pendingFollowUps.length} follow-up(s) will be created on save</div>
+          )}
+
           <div className="flex justify-end">
             <Button type="submit">{editingId ? "Update Work Order" : "Save Work Order"}</Button>
           </div>
         </form>
-
-        {editingId && (
-          <FollowUpSection entityType="workorder" entityId={editingId} />
-        )}
         </>
         )}
 
         {!showForm && (
+        <>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+            <input type="text" placeholder="Search work orders..." className="w-full h-8 pl-8 pr-3 text-xs border border-gray-200 rounded-md bg-white" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          </div>
+          <MultiSelectFilter label="Status" options={allStatuses} selected={statusFilter} onChange={setStatusFilter} />
+        </div>
         <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50 text-gray-700">
@@ -879,6 +972,7 @@ export default function WorkOrdersPage() {
             </tbody>
           </table>
         </div>
+        </>
         )}
       </div>
     </DashboardLayout>

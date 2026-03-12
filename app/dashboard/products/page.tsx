@@ -13,8 +13,9 @@ import { useToast } from "@/hooks/use-toast"
 import { useGeoCurrencies } from "@/hooks/use-geo"
 import { useCategories, type Category } from "@/hooks/use-categories"
 import { apiUrl } from "@/lib/api"
+import { Pencil, Trash2, Plus, X } from "lucide-react"
 
-type ProductTab = "machines" | "spares" | "categories"
+type ProductTab = "machines" | "spares" | "categories" | "subcategories"
 
 type Product = {
   id: number
@@ -98,6 +99,17 @@ export default function ProductsPage() {
   const { currencies: currencyOptions } = useGeoCurrencies()
   const [productFormError, setProductFormError] = useState("")
 
+  // Sub-categories state
+  type Subcategory = { id: number; name: string; category_id: number | null; category_name: string | null; product_count: number }
+  type SubcatProduct = { relation_id: number; product_id: number; product_type: string; product_name: string | null; product_code: string | null; sales_price: number | null; gst_percent: number | null }
+  const [subcategories, setSubcategories] = useState<Subcategory[]>([])
+  const [subcatModalOpen, setSubcatModalOpen] = useState(false)
+  const [editingSubcatId, setEditingSubcatId] = useState<number | null>(null)
+  const [subcatForm, setSubcatForm] = useState({ name: "", category_id: "" })
+  const [subcatProducts, setSubcatProducts] = useState<{ product_id: number; product_type: string }[]>([])
+  const [subcatSaving, setSubcatSaving] = useState(false)
+  const [deletingSubcatId, setDeletingSubcatId] = useState<number | null>(null)
+
   const menuItems = [
     { id: "inquiries", label: "Customer Inquiries" },
     { id: "quotations", label: "Quotations" },
@@ -144,11 +156,88 @@ export default function ProductsPage() {
     setSpareProducts(data.products || [])
   }
 
+  async function fetchSubcategories() {
+    try {
+      const res = await fetch(apiUrl("/api/products/subcategories"), { credentials: "include" })
+      if (!res.ok) return
+      const data = await res.json()
+      setSubcategories(data.subcategories || [])
+    } catch { /* ignore */ }
+  }
+
+  function openSubcatModal(subcat?: Subcategory) {
+    if (subcat) {
+      setEditingSubcatId(subcat.id)
+      setSubcatForm({ name: subcat.name, category_id: subcat.category_id ? String(subcat.category_id) : "" })
+      // Load products for this subcategory
+      fetch(apiUrl(`/api/products/subcategories/${subcat.id}`), { credentials: "include" })
+        .then((r) => r.json())
+        .then((d) => {
+          setSubcatProducts((d.products || []).map((p: SubcatProduct) => ({ product_id: p.product_id, product_type: p.product_type })))
+        })
+        .catch(() => {})
+    } else {
+      setEditingSubcatId(null)
+      setSubcatForm({ name: "", category_id: "" })
+      setSubcatProducts([])
+    }
+    setSubcatModalOpen(true)
+  }
+
+  async function submitSubcategory() {
+    if (!subcatForm.name.trim()) {
+      toast({ title: "Validation", description: "Name is required", variant: "destructive" })
+      return
+    }
+    setSubcatSaving(true)
+    try {
+      const isUpdate = editingSubcatId !== null
+      const url = isUpdate
+        ? apiUrl(`/api/products/subcategories/${editingSubcatId}`)
+        : apiUrl("/api/products/subcategories")
+      const res = await fetch(url, {
+        method: isUpdate ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          name: subcatForm.name.trim(),
+          category_id: subcatForm.category_id ? Number(subcatForm.category_id) : null,
+          products: subcatProducts,
+        }),
+      })
+      if (!res.ok) { const d = await res.json(); throw new Error(d?.message || "Failed") }
+      toast({ title: "Success", description: isUpdate ? "Sub-category updated" : "Sub-category created" })
+      setSubcatModalOpen(false)
+      await fetchSubcategories()
+    } catch (error) {
+      toast({ title: "Error", description: error instanceof Error ? error.message : "Failed", variant: "destructive" })
+    } finally { setSubcatSaving(false) }
+  }
+
+  async function deleteSubcategory(id: number) {
+    try {
+      const res = await fetch(apiUrl(`/api/products/subcategories/${id}`), { method: "DELETE", credentials: "include" })
+      if (!res.ok) throw new Error("Failed")
+      toast({ title: "Success", description: "Sub-category deleted" })
+      setDeletingSubcatId(null)
+      await fetchSubcategories()
+    } catch {
+      toast({ title: "Error", description: "Failed to delete sub-category", variant: "destructive" })
+    }
+  }
+
+  // All product options for subcategory editor
+  const allProductOptions = [
+    ...machineProducts.map((p) => ({ product_id: p.id, product_type: "machine" as const, label: `[M] ${p.product_name || p.product_code || "-"}` })),
+    ...spareProducts.map((p) => ({ product_id: p.id, product_type: "spare" as const, label: `[S] ${p.product_name || p.product_code || "-"}` })),
+  ]
+
   async function loadAll() {
     try {
       await Promise.all([
         fetchProducts("machines"),
         fetchProducts("spares"),
+        fetchSubcategories(),
       ])
     } catch {
       toast({
@@ -565,6 +654,7 @@ export default function ProductsPage() {
           <Button type="button" variant={activeTab === "machines" ? "default" : "outline"} onClick={() => setActiveTab("machines")}>Machine Products</Button>
           <Button type="button" variant={activeTab === "spares" ? "default" : "outline"} onClick={() => setActiveTab("spares")}>Spare Products</Button>
           <Button type="button" variant={activeTab === "categories" ? "default" : "outline"} onClick={() => setActiveTab("categories")}>Categories</Button>
+          <Button type="button" variant={activeTab === "subcategories" ? "default" : "outline"} onClick={() => setActiveTab("subcategories")}>Sub Categories</Button>
         </div>
 
         {activeTab === "categories" ? (
@@ -636,6 +726,143 @@ export default function ProductsPage() {
                   <div className="flex justify-end gap-2">
                     <Button type="button" variant="outline" onClick={() => setDeletingCategoryId(null)}>Cancel</Button>
                     <Button type="button" variant="destructive" onClick={() => deleteCategory(deletingCategoryId)}>Delete</Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : activeTab === "subcategories" ? (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-semibold text-gray-800">Sub Categories (Product Bundles)</h2>
+              <Button onClick={() => openSubcatModal()}>+ New Sub Category</Button>
+            </div>
+
+            <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 text-gray-700">
+                  <tr>
+                    <th className="px-4 py-2 text-left">#</th>
+                    <th className="px-4 py-2 text-left">Name</th>
+                    <th className="px-4 py-2 text-left">Category</th>
+                    <th className="px-4 py-2 text-left">Products</th>
+                    <th className="px-4 py-2 text-left">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {subcategories.length === 0 ? (
+                    <tr><td className="px-4 py-3" colSpan={5}>No sub-categories yet.</td></tr>
+                  ) : (
+                    subcategories.map((sc, idx) => (
+                      <tr key={sc.id} className="border-t">
+                        <td className="px-4 py-2">{idx + 1}</td>
+                        <td className="px-4 py-2 font-medium">{sc.name}</td>
+                        <td className="px-4 py-2">{sc.category_name || "-"}</td>
+                        <td className="px-4 py-2">{sc.product_count} items</td>
+                        <td className="px-4 py-2 flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => openSubcatModal(sc)}>
+                            <Pencil className="h-3.5 w-3.5 mr-1" />Edit
+                          </Button>
+                          <Button size="sm" variant="destructive" onClick={() => setDeletingSubcatId(sc.id)}>
+                            <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
+                          </Button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Subcategory Create/Edit Modal */}
+            {subcatModalOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+                  <h3 className="text-lg font-semibold text-gray-800">{editingSubcatId ? "Edit Sub Category" : "New Sub Category"}</h3>
+                  <div className="space-y-3">
+                    <div>
+                      <Label>Sub Category Name</Label>
+                      <Input
+                        value={subcatForm.name}
+                        onChange={(e) => setSubcatForm({ ...subcatForm, name: e.target.value })}
+                        placeholder="e.g. Full Lab Setup"
+                        autoFocus
+                      />
+                    </div>
+                    <div>
+                      <Label>Category</Label>
+                      <select
+                        className="w-full border border-gray-300 rounded-md h-10 px-3 text-sm"
+                        value={subcatForm.category_id}
+                        onChange={(e) => setSubcatForm({ ...subcatForm, category_id: e.target.value })}
+                      >
+                        <option value="">Select category</option>
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>{c.category_name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <Label>Products in Bundle</Label>
+                      <div className="space-y-2 mt-1">
+                        {subcatProducts.map((sp, idx) => {
+                          const opt = allProductOptions.find((o) => o.product_id === sp.product_id && o.product_type === sp.product_type)
+                          return (
+                            <div key={idx} className="flex items-center gap-2">
+                              <select
+                                className="flex-1 border border-gray-200 rounded-md h-9 px-2.5 text-sm"
+                                value={`${sp.product_type}-${sp.product_id}`}
+                                onChange={(e) => {
+                                  const [pt, pid] = e.target.value.split("-")
+                                  setSubcatProducts((prev) => prev.map((item, i) => i === idx ? { product_type: pt, product_id: Number(pid) } : item))
+                                }}
+                              >
+                                <option value="">Select product</option>
+                                {allProductOptions.map((o) => (
+                                  <option key={`${o.product_type}-${o.product_id}`} value={`${o.product_type}-${o.product_id}`}>{o.label}</option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => setSubcatProducts((prev) => prev.filter((_, i) => i !== idx))}
+                                className="h-9 w-9 flex items-center justify-center text-red-500 hover:bg-red-50 rounded-md"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                          )
+                        })}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setSubcatProducts((prev) => [...prev, { product_id: 0, product_type: "machine" }])}
+                        >
+                          <Plus className="h-3.5 w-3.5 mr-1" />Add Product
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button type="button" variant="outline" onClick={() => setSubcatModalOpen(false)}>Cancel</Button>
+                    <Button onClick={submitSubcategory} disabled={subcatSaving}>
+                      {subcatSaving ? "Saving..." : editingSubcatId ? "Update" : "Create"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Delete Confirmation */}
+            {deletingSubcatId !== null && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6 space-y-4">
+                  <h3 className="text-lg font-semibold text-gray-800">Delete Sub Category</h3>
+                  <p className="text-sm text-gray-600">Are you sure? This will remove the bundle and its product associations.</p>
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={() => setDeletingSubcatId(null)}>Cancel</Button>
+                    <Button type="button" variant="destructive" onClick={() => deleteSubcategory(deletingSubcatId)}>Delete</Button>
                   </div>
                 </div>
               </div>

@@ -25,6 +25,7 @@ import { up as up008 } from './008_create_purchase_module_tables.js';
 import { up as up009 } from './009_create_notifications_audit_tables.js';
 import { up as up010 } from './010_purchase_order_gst_terms.js';
 import { up as up011 } from './011_create_terms_conditions_table.js';
+import { up as up012 } from './012_subcategories_quotation_type_dropdowns.js';
 
 // ── Backup helper ──────────────────────────────────────────────────────────
 
@@ -60,6 +61,7 @@ const MIGRATIONS = [
   { version: 9, name: '009_create_notifications_audit_tables', up: up009 },
   { version: 10, name: '010_purchase_order_gst_terms', up: up010 },
   { version: 11, name: '011_create_terms_conditions_table', up: up011 },
+  { version: 12, name: '012_subcategories_quotation_type_dropdowns', up: up012 },
 ];
 
 // ── Main runner ────────────────────────────────────────────────────────────

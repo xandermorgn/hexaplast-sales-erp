@@ -24,15 +24,17 @@ type FollowUp = {
 interface FollowUpSectionProps {
   entityType: "enquiry" | "quotation" | "performa" | "workorder"
   entityId: number | null
+  /** Pending follow-ups to create after the parent entity is saved */
+  pendingFollowUps?: { note: string; reminder_date: string }[]
+  onPendingChange?: (pending: { note: string; reminder_date: string }[]) => void
 }
 
-export function FollowUpSection({ entityType, entityId }: FollowUpSectionProps) {
+export function FollowUpSection({ entityType, entityId, pendingFollowUps, onPendingChange }: FollowUpSectionProps) {
   const { toast } = useToast()
   const [followUps, setFollowUps] = useState<FollowUp[]>([])
   const [showForm, setShowForm] = useState(false)
   const [note, setNote] = useState("")
   const [reminderDate, setReminderDate] = useState("")
-  const [reminderTime, setReminderTime] = useState("")
   const [saving, setSaving] = useState(false)
 
   async function fetchFollowUps() {
@@ -53,13 +55,24 @@ export function FollowUpSection({ entityType, entityId }: FollowUpSectionProps) 
   }, [entityType, entityId])
 
   async function handleCreate() {
-    if (!entityId) return
-    if (!reminderDate || !reminderTime) {
-      toast({ title: "Validation", description: "Please set both reminder date and time", variant: "destructive" })
+    if (!reminderDate) {
+      toast({ title: "Validation", description: "Please set a reminder date", variant: "destructive" })
       return
     }
 
-    const reminder_datetime = `${reminderDate}T${reminderTime}:00`
+    // If entity not yet saved, store as pending
+    if (!entityId) {
+      if (onPendingChange) {
+        onPendingChange([...(pendingFollowUps || []), { note: note || "", reminder_date: reminderDate }])
+      }
+      setNote("")
+      setReminderDate("")
+      setShowForm(false)
+      toast({ title: "Reminder added", description: "Will be created when you save" })
+      return
+    }
+
+    const reminder_datetime = `${reminderDate}T09:00:00`
 
     setSaving(true)
     try {
@@ -81,7 +94,6 @@ export function FollowUpSection({ entityType, entityId }: FollowUpSectionProps) 
       toast({ title: "Reminder created", description: "Follow-up reminder has been scheduled" })
       setNote("")
       setReminderDate("")
-      setReminderTime("")
       setShowForm(false)
       await fetchFollowUps()
     } catch (error) {
@@ -122,12 +134,10 @@ export function FollowUpSection({ entityType, entityId }: FollowUpSectionProps) 
   function formatDateTime(dt: string) {
     const d = new Date(dt)
     if (isNaN(d.getTime())) return dt
-    return d.toLocaleString(undefined, {
+    return d.toLocaleDateString(undefined, {
       year: "numeric",
       month: "short",
       day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
     })
   }
 
@@ -136,8 +146,6 @@ export function FollowUpSection({ entityType, entityId }: FollowUpSectionProps) 
     completed: "bg-green-100 text-green-700",
     missed: "bg-red-100 text-red-700",
   }
-
-  if (!entityId) return null
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-3">
@@ -164,25 +172,14 @@ export function FollowUpSection({ entityType, entityId }: FollowUpSectionProps) 
               className="text-sm"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs">Reminder Date</Label>
-              <Input
-                type="date"
-                value={reminderDate}
-                onChange={(e) => setReminderDate(e.target.value)}
-                className="text-sm"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Reminder Time</Label>
-              <Input
-                type="time"
-                value={reminderTime}
-                onChange={(e) => setReminderTime(e.target.value)}
-                className="text-sm"
-              />
-            </div>
+          <div>
+            <Label className="text-xs">Follow-Up Date</Label>
+            <Input
+              type="date"
+              value={reminderDate}
+              onChange={(e) => setReminderDate(e.target.value)}
+              className="text-sm"
+            />
           </div>
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>

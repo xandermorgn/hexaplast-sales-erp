@@ -14,6 +14,10 @@ import { useAuth } from "@/hooks/use-auth"
 import { useGeoCountries, useGeoStates, useGeoCities } from "@/hooks/use-geo"
 import { apiUrl } from "@/lib/api"
 import { FollowUpSection } from "@/components/follow-up-section"
+import { DynamicDropdown } from "@/components/ui/dynamic-dropdown"
+import { MultiSelectFilter } from "@/components/ui/multi-select-filter"
+import { useDropdownValues } from "@/hooks/use-dropdown-values"
+import { Search } from "lucide-react"
 
 type AssignableUser = {
   id: number
@@ -118,6 +122,17 @@ export default function CustomerInquiriesPage() {
 
   // Assignable users
   const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([])
+  const { getValues, getOptions, refresh: refreshDropdowns } = useDropdownValues()
+  const [pendingFollowUps, setPendingFollowUps] = useState<{ note: string; reminder_date: string }[]>([])
+
+  // List filters
+  const [searchQuery, setSearchQuery] = useState("")
+  const [sourceFilter, setSourceFilter] = useState<string[]>([])
+  const [categoryFilter, setCategoryFilter] = useState<string[]>([])
+  const [industryFilter, setIndustryFilter] = useState<string[]>([])
+  const [statusFilter, setStatusFilter] = useState<string[]>([])
+
+  const isAdmin = user?.role === "master_admin"
 
   useEffect(() => {
     fetch(apiUrl("/api/users/assignable"), { credentials: "include" })
@@ -202,6 +217,7 @@ export default function CustomerInquiriesPage() {
     setSelectedCountryId(null)
     setSelectedStateId(null)
     setFormError("")
+    setPendingFollowUps([])
     setShowForm(true)
   }
 
@@ -262,6 +278,27 @@ export default function CustomerInquiriesPage() {
       if (!response.ok) {
         setFormError(data?.message || "Failed to save inquiry")
         return
+      }
+
+      // Create pending follow-ups
+      const savedId = editingId || data?.inquiry?.id
+      if (!editingId && pendingFollowUps.length > 0 && savedId) {
+        for (const pf of pendingFollowUps) {
+          try {
+            await fetch(apiUrl("/api/followups"), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({
+                entity_type: "enquiry",
+                entity_id: savedId,
+                note: pf.note || null,
+                reminder_datetime: `${pf.reminder_date}T09:00:00`,
+              }),
+            })
+          } catch { /* ignore */ }
+        }
+        setPendingFollowUps([])
       }
 
       toast({
@@ -394,19 +431,51 @@ export default function CustomerInquiriesPage() {
               </div>
               <div>
                 <Label>Enquiry Source</Label>
-                <Input value={form.enquiry_source} onChange={(e) => setForm({ ...form, enquiry_source: e.target.value })} />
+                <DynamicDropdown
+                  fieldName="enquiry_source"
+                  label="Source"
+                  value={form.enquiry_source}
+                  onChange={(v) => setForm({ ...form, enquiry_source: v })}
+                  values={getValues("enquiry_source")}
+                  onValuesChange={refreshDropdowns}
+                  canDelete={isAdmin}
+                />
               </div>
               <div>
                 <Label>Category</Label>
-                <Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+                <DynamicDropdown
+                  fieldName="category"
+                  label="Category"
+                  value={form.category}
+                  onChange={(v) => setForm({ ...form, category: v })}
+                  values={getValues("category")}
+                  onValuesChange={refreshDropdowns}
+                  canDelete={isAdmin}
+                />
               </div>
               <div>
                 <Label>Industry</Label>
-                <Input value={form.industry} onChange={(e) => setForm({ ...form, industry: e.target.value })} />
+                <DynamicDropdown
+                  fieldName="industry"
+                  label="Industry"
+                  value={form.industry}
+                  onChange={(v) => setForm({ ...form, industry: v })}
+                  values={getValues("industry")}
+                  onValuesChange={refreshDropdowns}
+                  canDelete={isAdmin}
+                />
               </div>
               <div>
                 <Label>Region</Label>
-                <Input value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} />
+                <DynamicDropdown
+                  fieldName="region"
+                  label="Region"
+                  value={form.region}
+                  onChange={(v) => setForm({ ...form, region: v })}
+                  values={getValues("region")}
+                  onValuesChange={refreshDropdowns}
+                  canDelete={isAdmin}
+                />
               </div>
               <div>
                 <Label>Country</Label>
@@ -458,10 +527,6 @@ export default function CustomerInquiriesPage() {
                   ))}
                 </select>
               </div>
-              <div>
-                <Label>Follow-up</Label>
-                <Input value={form.followup} onChange={(e) => setForm({ ...form, followup: e.target.value })} />
-              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -475,6 +540,20 @@ export default function CustomerInquiriesPage() {
               </div>
             </div>
 
+            {/* Follow-Up Section — above buttons */}
+            <FollowUpSection
+              entityType="enquiry"
+              entityId={editingId}
+              pendingFollowUps={pendingFollowUps}
+              onPendingChange={setPendingFollowUps}
+            />
+
+            {pendingFollowUps.length > 0 && !editingId && (
+              <div className="text-xs text-gray-500">
+                {pendingFollowUps.length} follow-up(s) will be created on save
+              </div>
+            )}
+
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
                 Cancel
@@ -482,13 +561,27 @@ export default function CustomerInquiriesPage() {
               <Button type="submit">{editingId ? "Update" : "Create"}</Button>
             </div>
           </form>
-
-          {editingId && (
-            <FollowUpSection entityType="enquiry" entityId={editingId} />
-          )}
           </>
         )}
         {!showForm && (
+          <>
+          {/* Search + filters bar */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search inquiries..."
+                className="w-full h-8 pl-8 pr-3 text-xs border border-gray-200 rounded-md bg-white"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            <MultiSelectFilter label="Source" options={getOptions("enquiry_source")} selected={sourceFilter} onChange={setSourceFilter} />
+            <MultiSelectFilter label="Category" options={getOptions("category")} selected={categoryFilter} onChange={setCategoryFilter} />
+            <MultiSelectFilter label="Industry" options={getOptions("industry")} selected={industryFilter} onChange={setIndustryFilter} />
+            <MultiSelectFilter label="Status" options={["open", "converted", "closed"]} selected={statusFilter} onChange={setStatusFilter} />
+          </div>
           <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50 text-gray-700">
@@ -515,7 +608,22 @@ export default function CustomerInquiriesPage() {
                     <td className="px-3 py-3" colSpan={10}>No inquiries found.</td>
                   </tr>
                 ) : (
-                  inquiries.map((item) => (
+                  inquiries.filter((item) => {
+                    if (sourceFilter.length > 0 && !sourceFilter.includes(item.enquiry_source || "")) return false
+                    if (categoryFilter.length > 0 && !categoryFilter.includes(item.category || "")) return false
+                    if (industryFilter.length > 0 && !industryFilter.includes(item.industry || "")) return false
+                    if (statusFilter.length > 0 && !statusFilter.includes(item.status || "open")) return false
+                    if (searchQuery) {
+                      const q = searchQuery.toLowerCase()
+                      const match =
+                        (item.inquiry_number || "").toLowerCase().includes(q) ||
+                        (item.company_name || "").toLowerCase().includes(q) ||
+                        (item.authorized_person || "").toLowerCase().includes(q) ||
+                        (item.email || "").toLowerCase().includes(q)
+                      if (!match) return false
+                    }
+                    return true
+                  }).map((item) => (
                     <tr key={item.id} className="border-t">
                       <td className="px-3 py-2 font-medium">{item.inquiry_number}</td>
                       <td className="px-3 py-2">{formatDate(item.created_at)}</td>
@@ -525,7 +633,7 @@ export default function CustomerInquiriesPage() {
                       <td className="px-3 py-2">{item.email || "-"}</td>
                       <td className="px-3 py-2">{item.enquiry_source || "-"}</td>
                       <td className="px-3 py-2">{item.category || "-"}</td>
-                      <td className="px-3 py-2">{item.followup || "-"}</td>
+                      <td className="px-3 py-2">{item.status || "open"}</td>
                       <td className="px-3 py-2">
                         <div className="flex gap-2">
                           <Button size="sm" variant="outline" onClick={() => openEditForm(item)}>
@@ -542,6 +650,7 @@ export default function CustomerInquiriesPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </DashboardLayout>

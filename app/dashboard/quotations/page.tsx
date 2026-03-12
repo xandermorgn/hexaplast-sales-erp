@@ -16,6 +16,8 @@ import { apiUrl } from "@/lib/api"
 import { useSilentRefresh } from "@/hooks/use-silent-refresh"
 import { parseNum } from "@/lib/parse-number"
 import { FollowUpSection } from "@/components/follow-up-section"
+import { MultiSelectFilter } from "@/components/ui/multi-select-filter"
+import { Search } from "lucide-react"
 
 type Inquiry = {
   id: number
@@ -65,7 +67,15 @@ type QuotationRow = {
   total_discount: number
   total_amount: number
   status: string | null
+  quotation_type: string | null
   created_at: string
+}
+
+type SubcategoryOption = {
+  id: number
+  name: string
+  category_name: string | null
+  products: { product_id: number; product_type: string; product_name: string | null; product_code: string | null; sales_price: number | null; gst_percent: number | null }[]
 }
 
 type QuotationDetailItem = {
@@ -245,6 +255,14 @@ export default function QuotationsPage() {
   })
   const [termsType, setTermsType] = useState<string>("")
   const [quotationTermsTemplates, setQuotationTermsTemplates] = useState<TermsTemplate[]>([])
+  const [quotationType, setQuotationType] = useState<string>("")
+  const [subcategories, setSubcategories] = useState<SubcategoryOption[]>([])
+  const [pendingFollowUps, setPendingFollowUps] = useState<{ note: string; reminder_date: string }[]>([])
+
+  // List filters
+  const [searchQuery, setSearchQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState<string[]>([])
+  const [typeFilter, setTypeFilter] = useState<string[]>([])
 
   const selectedInquiry = useMemo(
     () => inquiries.find((inquiry) => String(inquiry.id) === inquiryId) || null,
@@ -304,9 +322,32 @@ export default function QuotationsPage() {
         if (created > toDate) return false
       }
 
+      if (statusFilter.length > 0 && !statusFilter.includes(quotation.status || "draft")) return false
+      if (typeFilter.length > 0 && !typeFilter.includes(quotation.quotation_type || "")) return false
+
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase()
+        const match =
+          (quotation.quotation_number || "").toLowerCase().includes(q) ||
+          (quotation.company_name || "").toLowerCase().includes(q) ||
+          (quotation.inquiry_number || "").toLowerCase().includes(q) ||
+          (quotation.authorized_person || "").toLowerCase().includes(q)
+        if (!match) return false
+      }
+
       return true
     })
-  }, [quotations, filters.from_date, filters.to_date])
+  }, [quotations, filters.from_date, filters.to_date, statusFilter, typeFilter, searchQuery])
+
+  const allStatuses = useMemo(() => {
+    const s = new Set(quotations.map((q) => q.status || "draft"))
+    return Array.from(s).sort()
+  }, [quotations])
+
+  const allTypes = useMemo(() => {
+    const s = new Set(quotations.filter((q) => q.quotation_type).map((q) => q.quotation_type as string))
+    return Array.from(s).sort()
+  }, [quotations])
 
   async function fetchInquiries() {
     const response = await fetch(apiUrl("/api/inquiries"), { credentials: "include" })
@@ -332,7 +373,7 @@ export default function QuotationsPage() {
       key: `machine-${product.id}`,
       product_type: "machine",
       product_id: product.id,
-      label: `${categoryMap.get(Number(product.category_id)) || product.category_name || "Uncategorized"} — ${product.product_name || "-"} (${product.product_code || "-"})`,
+      label: `[M] ${categoryMap.get(Number(product.category_id)) || product.category_name || "Uncategorized"} — ${product.product_name || "-"} (${product.product_code || "-"})`,
       sales_price: Number(product.sales_price) || 0,
       gst_percent: Number(product.gst_percent) || 0,
     }))
@@ -341,12 +382,32 @@ export default function QuotationsPage() {
       key: `spare-${product.id}`,
       product_type: "spare",
       product_id: product.id,
-      label: `${categoryMap.get(Number(product.category_id)) || product.category_name || "Uncategorized"} — ${product.product_name || "-"} (${product.product_code || "-"})`,
+      label: `[S] ${categoryMap.get(Number(product.category_id)) || product.category_name || "Uncategorized"} — ${product.product_name || "-"} (${product.product_code || "-"})`,
       sales_price: Number(product.sales_price) || 0,
       gst_percent: Number(product.gst_percent) || 0,
     }))
 
     setProducts([...machineOptions, ...spareOptions])
+  }
+
+  async function fetchSubcategories() {
+    try {
+      const res = await fetch(apiUrl("/api/products/subcategories"), { credentials: "include" })
+      if (!res.ok) return
+      const data = await res.json()
+      // For each subcategory, fetch its products
+      const subs: SubcategoryOption[] = []
+      for (const sc of (data.subcategories || [])) {
+        try {
+          const detRes = await fetch(apiUrl(`/api/products/subcategories/${sc.id}`), { credentials: "include" })
+          if (detRes.ok) {
+            const det = await detRes.json()
+            subs.push({ id: sc.id, name: sc.name, category_name: sc.category_name, products: det.products || [] })
+          }
+        } catch { /* ignore */ }
+      }
+      setSubcategories(subs)
+    } catch { /* ignore */ }
   }
 
   async function fetchQuotations() {
@@ -410,7 +471,7 @@ export default function QuotationsPage() {
 
   async function loadAll() {
     try {
-      await Promise.all([fetchInquiries(), fetchProducts(), fetchQuotations(), fetchDocumentDefaults(true), fetchQuotationTermsTemplates()])
+      await Promise.all([fetchInquiries(), fetchProducts(), fetchQuotations(), fetchDocumentDefaults(true), fetchQuotationTermsTemplates(), fetchSubcategories()])
     } catch {
       toast({ title: "Error", description: "Failed to load quotation module data", variant: "destructive" })
     }
@@ -436,6 +497,38 @@ export default function QuotationsPage() {
     setAttention(defaultSettings.attention)
     setDeclaration(defaultSettings.declaration)
     setSpecialNotes(defaultSettings.special_notes)
+    setQuotationType("")
+    setPendingFollowUps([])
+  }
+
+  // Filtered products based on quotation type
+  const filteredProducts = useMemo(() => {
+    if (!quotationType) return products
+    if (quotationType === "machine") return products.filter((p) => p.product_type === "machine")
+    if (quotationType === "spare") return products.filter((p) => p.product_type === "spare")
+    return products
+  }, [products, quotationType])
+
+  function onSelectSubcategory(subcatId: number) {
+    const sc = subcategories.find((s) => s.id === subcatId)
+    if (!sc || !sc.products.length) return
+    const newItems: QuotationItemForm[] = sc.products.map((p) => {
+      const prodOpt = products.find((o) => o.product_id === p.product_id && o.product_type === p.product_type)
+      return {
+        product_key: `${p.product_type}-${p.product_id}`,
+        product_type: p.product_type as "machine" | "spare",
+        product_id: p.product_id,
+        quantity: "1",
+        price: String(p.sales_price || prodOpt?.sales_price || 0),
+        discount_percent: "0",
+        discount_amount: "0",
+        gst_percent: String(p.gst_percent || prodOpt?.gst_percent || 0),
+      }
+    })
+    setItems((prev) => {
+      const nonEmpty = prev.filter((it) => it.product_id)
+      return [...nonEmpty, ...newItems]
+    })
   }
 
   function openCreateForm() {
@@ -501,6 +594,7 @@ export default function QuotationsPage() {
         declaration,
         special_notes: specialNotes,
         items: sanitizedItems,
+        quotation_type: quotationType || null,
       }
 
       const isUpdate = Boolean(editingId)
@@ -521,6 +615,26 @@ export default function QuotationsPage() {
       const detail = data.quotation as QuotationDetail
       setSavedQuotation(detail)
       setEditingId(detail.id)
+
+      // Create pending follow-ups now that we have an ID
+      if (!isUpdate && pendingFollowUps.length > 0) {
+        for (const pf of pendingFollowUps) {
+          try {
+            await fetch(apiUrl("/api/followups"), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({
+                entity_type: "quotation",
+                entity_id: detail.id,
+                note: pf.note || null,
+                reminder_datetime: `${pf.reminder_date}T09:00:00`,
+              }),
+            })
+          } catch { /* ignore */ }
+        }
+        setPendingFollowUps([])
+      }
 
       toast({ title: "Success", description: isUpdate ? "Quotation updated" : "Quotation saved" })
       await fetchQuotations()
@@ -545,6 +659,7 @@ export default function QuotationsPage() {
       setAttention(quotation.attention || "")
       setDeclaration(quotation.declaration || "")
       setSpecialNotes(quotation.special_notes || "")
+      setQuotationType((quotation as any).quotation_type || "")
       setShowForm(true)
 
       setItems(
@@ -684,7 +799,7 @@ export default function QuotationsPage() {
               {formError}
             </div>
           )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <Label>Company Name - Inquiry Number</Label>
               <select
@@ -697,6 +812,33 @@ export default function QuotationsPage() {
                 {inquiries.map((inquiry) => (
                   <option key={inquiry.id} value={inquiry.id}>
                     {(inquiry.company_name || "-") + " - " + inquiry.inquiry_number}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label>Quotation Type</Label>
+              <select
+                className="w-full border border-gray-300 rounded-md h-10 px-3"
+                value={quotationType}
+                onChange={(e) => setQuotationType(e.target.value)}
+              >
+                <option value="">All Products</option>
+                <option value="machine">Machine Quotation</option>
+                <option value="spare">Spare Quotation</option>
+              </select>
+            </div>
+            <div>
+              <Label>Add Bundle (Sub Category)</Label>
+              <select
+                className="w-full border border-gray-300 rounded-md h-10 px-3"
+                value=""
+                onChange={(e) => { if (e.target.value) onSelectSubcategory(Number(e.target.value)) }}
+              >
+                <option value="">Select bundle to add...</option>
+                {subcategories.map((sc) => (
+                  <option key={sc.id} value={sc.id}>
+                    {sc.name} ({sc.products.length} items)
                   </option>
                 ))}
               </select>
@@ -750,7 +892,7 @@ export default function QuotationsPage() {
                             onChange={(e) => onSelectProduct(index, e.target.value)}
                           >
                             <option value="">Select product</option>
-                            {products.map((product) => (
+                            {filteredProducts.map((product) => (
                               <option key={product.key} value={product.key}>{product.label}</option>
                             ))}
                           </select>
@@ -820,18 +962,46 @@ export default function QuotationsPage() {
             <div><span className="font-medium">Total:</span> {summary.totalAmount.toFixed(2)}</div>
           </div>
 
+          {/* Follow-Up Section — above buttons */}
+          <FollowUpSection
+            entityType="quotation"
+            entityId={editingId}
+            pendingFollowUps={pendingFollowUps}
+            onPendingChange={setPendingFollowUps}
+          />
+
+          {pendingFollowUps.length > 0 && !editingId && (
+            <div className="text-xs text-gray-500">
+              {pendingFollowUps.length} follow-up(s) will be created on save
+            </div>
+          )}
+
           <div className="flex justify-end">
             <Button type="submit">{editingId ? "Update Quotation" : "Save Quotation"}</Button>
           </div>
         </form>
-
-        {editingId && (
-          <FollowUpSection entityType="quotation" entityId={editingId} />
-        )}
         </>
         )}
 
         {!showForm && (
+        <>
+        {/* Search + filters bar */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search quotations..."
+              className="w-full h-8 pl-8 pr-3 text-xs border border-gray-200 rounded-md bg-white"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <MultiSelectFilter label="Status" options={allStatuses} selected={statusFilter} onChange={setStatusFilter} />
+          {allTypes.length > 0 && (
+            <MultiSelectFilter label="Type" options={allTypes} selected={typeFilter} onChange={setTypeFilter} />
+          )}
+        </div>
         <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50 text-gray-700">
@@ -864,7 +1034,17 @@ export default function QuotationsPage() {
                     <td className="px-3 py-2">{round2(Number(quotation.subtotal || 0)).toFixed(2)}</td>
                     <td className="px-3 py-2">{round2(Number(quotation.total_discount || 0)).toFixed(2)}</td>
                     <td className="px-3 py-2">{round2(Number(quotation.total_amount || 0)).toFixed(2)}</td>
-                    <td className="px-3 py-2">{quotation.status || "draft"}</td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+                        quotation.status === "accepted" ? "bg-green-100 text-green-700" :
+                        quotation.status === "sent" ? "bg-blue-100 text-blue-700" :
+                        quotation.status === "converted" ? "bg-purple-100 text-purple-700" :
+                        quotation.status === "rejected" ? "bg-red-100 text-red-700" :
+                        "bg-gray-100 text-gray-700"
+                      }`}>
+                        {quotation.status || "draft"}
+                      </span>
+                    </td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-1">
                         <Button size="icon" variant="ghost" className="h-8 w-8" title="Print" onClick={() => printQuotation(quotation.id)}>
@@ -884,6 +1064,7 @@ export default function QuotationsPage() {
             </tbody>
           </table>
         </div>
+        </>
         )}
       </div>
     </DashboardLayout>

@@ -201,6 +201,8 @@ export function createQuotation(req, res) {
     const quotation_number = generateNextQuotationNumber();
     const created_by = req.user?.id || null;
 
+    const quotation_type = req.body?.quotation_type || null;
+
     const insert = run(
       `INSERT INTO quotations (
         quotation_number,
@@ -216,8 +218,9 @@ export function createQuotation(req, res) {
         attention,
         declaration,
         special_notes,
+        quotation_type,
         is_deleted
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       [
         quotation_number,
         inquiry_id,
@@ -232,6 +235,7 @@ export function createQuotation(req, res) {
         req.body?.attention || null,
         req.body?.declaration || null,
         req.body?.special_notes || null,
+        quotation_type,
       ],
     );
 
@@ -434,6 +438,10 @@ export function updateQuotation(req, res) {
           total_amount: existing.total_amount,
         };
 
+    const nextQuotationType = Object.prototype.hasOwnProperty.call(req.body || {}, 'quotation_type')
+      ? (req.body.quotation_type || null)
+      : (existing.quotation_type || null);
+
     run(
       `UPDATE quotations
        SET inquiry_id = ?,
@@ -446,7 +454,8 @@ export function updateQuotation(req, res) {
            terms_conditions = ?,
            attention = ?,
            declaration = ?,
-           special_notes = ?
+           special_notes = ?,
+           quotation_type = ?
        WHERE id = ? AND is_deleted = 0`,
       [
         inquiry_id,
@@ -460,6 +469,7 @@ export function updateQuotation(req, res) {
         Object.prototype.hasOwnProperty.call(req.body || {}, 'attention') ? (req.body.attention || null) : existing.attention,
         Object.prototype.hasOwnProperty.call(req.body || {}, 'declaration') ? (req.body.declaration || null) : existing.declaration,
         Object.prototype.hasOwnProperty.call(req.body || {}, 'special_notes') ? (req.body.special_notes || null) : existing.special_notes,
+        nextQuotationType,
         id,
       ],
     );
