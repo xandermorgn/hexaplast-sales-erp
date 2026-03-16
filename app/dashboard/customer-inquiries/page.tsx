@@ -135,7 +135,7 @@ export default function CustomerInquiriesPage() {
   const isAdmin = user?.role === "master_admin"
 
   useEffect(() => {
-    fetch(apiUrl("/api/users/assignable"), { credentials: "include" })
+    fetch(apiUrl("/api/users/assignable?designation=Sales Employee"), { credentials: "include" })
       .then((r) => r.json())
       .then((d) => setAssignableUsers(d.users || []))
       .catch(() => {})
@@ -148,6 +148,7 @@ export default function CustomerInquiriesPage() {
     { id: "work-orders", label: "Work Orders" },
     { id: "products", label: "Products" },
     { id: "followups", label: "Follow Ups" },
+    { id: "reports", label: "Reports" },
   ]
 
   function handleSectionChange(section: string) {
@@ -158,6 +159,7 @@ export default function CustomerInquiriesPage() {
       "work-orders": "/dashboard/work-orders",
       products: "/dashboard/products",
       followups: "/dashboard/followups",
+      reports: "/dashboard/reports",
     }
 
     const target = routeMap[section]
@@ -423,11 +425,16 @@ export default function CustomerInquiriesPage() {
               </div>
               <div>
                 <Label>Assigned To</Label>
-                <Input
-                  value={user?.name || ""}
-                  readOnly
-                  className="bg-gray-50 cursor-not-allowed"
-                />
+                <select
+                  className="w-full border border-gray-300 rounded-md h-10 px-3"
+                  value={form.assigned_to}
+                  onChange={(e) => setForm({ ...form, assigned_to: e.target.value })}
+                >
+                  <option value="">Select employee</option>
+                  {assignableUsers.map((u) => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <Label>Enquiry Source</Label>

@@ -67,6 +67,17 @@ export async function login(req, res) {
       });
     }
 
+    // Check if employee is inactive (fired)
+    if (user.role === 'employee') {
+      const emp = get('SELECT status FROM employees WHERE user_id = ?', [user.id]);
+      if (emp && emp.status === 'inactive') {
+        return res.status(403).json({
+          success: false,
+          message: 'Your account has been deactivated. Please contact the administrator.'
+        });
+      }
+    }
+
     // Create server-side session
     const sessionToken = createSession(user);
     

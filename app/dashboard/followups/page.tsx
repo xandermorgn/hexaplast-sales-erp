@@ -30,6 +30,7 @@ const menuItems = [
   { id: "work-orders", label: "Work Orders" },
   { id: "products", label: "Products" },
   { id: "followups", label: "Follow Ups" },
+  { id: "reports", label: "Reports" },
 ]
 
 export default function FollowUpsPage() {
@@ -50,6 +51,7 @@ export default function FollowUpsPage() {
       "work-orders": "/dashboard/work-orders",
       products: "/dashboard/products",
       followups: "/dashboard/followups",
+      reports: "/dashboard/reports",
     }
     const target = routeMap[section]
     if (target) router.push(target)

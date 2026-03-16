@@ -10,7 +10,6 @@ import { MyProfile } from "@/components/profile/my-profile"
 import { useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
 import { apiUrl } from "@/lib/api"
-import { RichTextEditor } from "@/components/rich-text-editor"
 
 type Employee = {
   id: number
@@ -56,20 +55,12 @@ type KpiOverview = {
 
 type DocumentDefaults = {
   terms_conditions: string
+  proforma_terms: string
   attention: string
   declaration: string
   special_notes: string
 }
 
-type TermsTemplate = {
-  id: number
-  document_type: string
-  title: string
-  content: string
-  is_active: number
-  created_at: string
-  updated_at: string
-}
 
 const defaultKpis: KpiOverview = {
   total_inquiries: 0,
@@ -84,6 +75,7 @@ const defaultKpis: KpiOverview = {
 
 const defaultTerms: DocumentDefaults = {
   terms_conditions: "",
+  proforma_terms: "",
   attention: "",
   declaration: "",
   special_notes: "",
@@ -127,13 +119,6 @@ export default function MasterAdminPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [savingTerms, setSavingTerms] = useState(false)
 
-  // Terms & Conditions templates state
-  const [termsTemplates, setTermsTemplates] = useState<TermsTemplate[]>([])
-  const [termsModalOpen, setTermsModalOpen] = useState(false)
-  const [editingTerm, setEditingTerm] = useState<TermsTemplate | null>(null)
-  const [termForm, setTermForm] = useState({ document_type: "quotation", title: "", content: "", is_active: 1 })
-  const [savingTerm, setSavingTerm] = useState(false)
-  const [termsFilter, setTermsFilter] = useState<string>("all")
   const [fireConfirm, setFireConfirm] = useState<{ open: boolean; employee: Employee | null }>({ open: false, employee: null })
   const [firingEmployee, setFiringEmployee] = useState(false)
   const [employeeError, setEmployeeError] = useState("")
@@ -190,12 +175,6 @@ export default function MasterAdminPage() {
     setTermsForm({ ...defaultTerms, ...(data.defaults || {}) })
   }
 
-  async function fetchTermsTemplates() {
-    const response = await fetch(apiUrl("/api/terms-conditions"), { credentials: "include" })
-    if (!response.ok) throw new Error("Failed to fetch terms templates")
-    const data = await response.json()
-    setTermsTemplates(data.terms || [])
-  }
 
   async function loadAll() {
     try {
@@ -206,7 +185,6 @@ export default function MasterAdminPage() {
         fetchProducts(),
         fetchKpis(),
         fetchTerms(),
-        fetchTermsTemplates(),
       ])
     } catch (error) {
       toast({
@@ -250,14 +228,16 @@ export default function MasterAdminPage() {
         credentials: "include",
       })
       const data = await response.json()
-      if (!response.ok) throw new Error(data?.message || "Failed to fire employee")
-      toast({ title: "Success", description: `Employee ${fireConfirm.employee.full_name || fireConfirm.employee.login_id} has been fired` })
+      if (!response.ok) throw new Error(data?.message || "Failed to deactivate employee")
+      toast({ title: "Success", description: `Employee ${fireConfirm.employee.full_name || fireConfirm.employee.login_id} has been deactivated` })
       setFireConfirm({ open: false, employee: null })
+      // Small delay to let deferred session cleanup finish without causing 401
+      await new Promise((r) => setTimeout(r, 800))
       await fetchEmployees()
     } catch (error) {
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to fire employee",
+        description: error instanceof Error ? error.message : "Failed to deactivate employee",
         variant: "destructive",
       })
     } finally {
@@ -265,87 +245,6 @@ export default function MasterAdminPage() {
     }
   }
 
-  // ── Terms Template CRUD ──
-
-  function openTermModal(term?: TermsTemplate) {
-    if (term) {
-      setEditingTerm(term)
-      setTermForm({ document_type: term.document_type, title: term.title, content: term.content, is_active: term.is_active })
-    } else {
-      setEditingTerm(null)
-      setTermForm({ document_type: "quotation", title: "", content: "", is_active: 1 })
-    }
-    setTermsModalOpen(true)
-  }
-
-  async function handleSaveTerm() {
-    if (!termForm.title.trim()) {
-      toast({ title: "Error", description: "Title is required", variant: "destructive" })
-      return
-    }
-    setSavingTerm(true)
-    try {
-      const url = editingTerm ? apiUrl(`/api/terms-conditions/${editingTerm.id}`) : apiUrl("/api/terms-conditions")
-      const method = editingTerm ? "PUT" : "POST"
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(termForm),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        toast({ title: "Error", description: data.message || "Failed to save", variant: "destructive" })
-        return
-      }
-      toast({ title: "Success", description: editingTerm ? "Term updated" : "Term created" })
-      setTermsModalOpen(false)
-      await fetchTermsTemplates()
-    } catch {
-      toast({ title: "Error", description: "Failed to save term", variant: "destructive" })
-    } finally {
-      setSavingTerm(false)
-    }
-  }
-
-  async function handleDeleteTerm(id: number) {
-    try {
-      const res = await fetch(apiUrl(`/api/terms-conditions/${id}`), { method: "DELETE", credentials: "include" })
-      if (!res.ok) {
-        const data = await res.json()
-        toast({ title: "Error", description: data.message || "Failed to delete", variant: "destructive" })
-        return
-      }
-      toast({ title: "Deleted", description: "Term template deleted" })
-      await fetchTermsTemplates()
-    } catch {
-      toast({ title: "Error", description: "Failed to delete term", variant: "destructive" })
-    }
-  }
-
-  async function handleToggleTermActive(term: TermsTemplate) {
-    try {
-      await fetch(apiUrl(`/api/terms-conditions/${term.id}`), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ is_active: term.is_active ? 0 : 1 }),
-      })
-      await fetchTermsTemplates()
-    } catch {
-      toast({ title: "Error", description: "Failed to update term", variant: "destructive" })
-    }
-  }
-
-  const filteredTermsTemplates = termsFilter === "all"
-    ? termsTemplates
-    : termsTemplates.filter((t) => t.document_type === termsFilter)
-
-  const docTypeLabels: Record<string, string> = {
-    quotation: "Quotation",
-    proforma_invoice: "Proforma Invoice",
-    purchase_order: "Purchase Order",
-  }
 
   async function handleCreateEmployee(event: FormEvent) {
     event.preventDefault()
@@ -612,15 +511,23 @@ export default function MasterAdminPage() {
                         <td className="px-3 py-2">{employee.email || "-"}</td>
                         <td className="px-3 py-2">{employee.contact_number || "-"}</td>
                         <td className="px-3 py-2">{employee.designation || "-"}</td>
-                        <td className="px-3 py-2">{employee.status}</td>
                         <td className="px-3 py-2">
-                          <Button
-                            size="sm"
-                            className="bg-red-600 hover:bg-red-700 text-white"
-                            onClick={() => setFireConfirm({ open: true, employee })}
-                          >
-                            Fire
-                          </Button>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${employee.status === "active" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                            {employee.status}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">
+                          {employee.status === "active" ? (
+                            <Button
+                              size="sm"
+                              className="bg-red-600 hover:bg-red-700 text-white"
+                              onClick={() => setFireConfirm({ open: true, employee })}
+                            >
+                              Fire
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-gray-400">Deactivated</span>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -633,10 +540,10 @@ export default function MasterAdminPage() {
             {fireConfirm.open && fireConfirm.employee && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
                 <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6 space-y-4">
-                  <h3 className="text-lg font-semibold text-gray-800">Fire Employee</h3>
+                  <h3 className="text-lg font-semibold text-gray-800">Deactivate Employee</h3>
                   <p className="text-sm text-gray-600">
-                    Are you sure you want to fire <span className="font-semibold">{fireConfirm.employee.full_name || fireConfirm.employee.login_id}</span>?
-                    This action cannot be undone.
+                    Are you sure you want to deactivate <span className="font-semibold">{fireConfirm.employee.full_name || fireConfirm.employee.login_id}</span>?
+                    Their account will be disabled but their data will be preserved.
                   </p>
                   <div className="flex justify-end gap-2">
                     <Button variant="outline" onClick={() => setFireConfirm({ open: false, employee: null })} disabled={firingEmployee}>
@@ -647,7 +554,7 @@ export default function MasterAdminPage() {
                       onClick={handleFireEmployee}
                       disabled={firingEmployee}
                     >
-                      {firingEmployee ? "Firing..." : "Confirm Fire"}
+                      {firingEmployee ? "Deactivating..." : "Confirm Deactivate"}
                     </Button>
                   </div>
                 </div>
@@ -883,149 +790,36 @@ export default function MasterAdminPage() {
 
         {activeSection === "terms" && (
           <div className="space-y-5">
-            <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-800">Terms & Conditions</h2>
+              <p className="text-sm text-gray-500">These defaults are automatically applied to all generated documents (Quotations, Proforma Invoices, Purchase Orders, Work Orders).</p>
+            </div>
+
+            <form onSubmit={saveTermsDefaults} className="rounded-lg border border-gray-200 bg-white p-5 space-y-4">
               <div>
-                <h2 className="text-xl font-semibold text-gray-800">Terms & Conditions</h2>
-                <p className="text-sm text-gray-500">Manage default terms for Quotations, Proforma Invoices, and Purchase Orders.</p>
+                <Label>Default Terms & Conditions</Label>
+                <Textarea rows={5} value={termsForm.terms_conditions} onChange={(e) => setTermsForm((prev) => ({ ...prev, terms_conditions: e.target.value }))} placeholder="e.g. Price based on Ex-Works, Payment 50% advance, Delivery within 6 weeks..." />
               </div>
-              <Button onClick={() => openTermModal()}>+ Add New Term</Button>
-            </div>
-
-            {/* Filter tabs */}
-            <div className="flex gap-2 border-b border-gray-200">
-              {[{ key: "all", label: "All" }, { key: "quotation", label: "Quotation" }, { key: "proforma_invoice", label: "Proforma Invoice" }, { key: "purchase_order", label: "Purchase Order" }].map((tab) => (
-                <button
-                  key={tab.key}
-                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                    termsFilter === tab.key ? "border-orange-500 text-orange-600" : "border-transparent text-gray-500 hover:text-gray-700"
-                  }`}
-                  onClick={() => setTermsFilter(tab.key)}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Terms list */}
-            {filteredTermsTemplates.length === 0 ? (
-              <div className="rounded-lg border border-gray-200 bg-white p-8 text-center text-gray-400">
-                No terms templates found. Click &quot;Add New Term&quot; to create one.
+              <div>
+                <Label>Default Proforma Invoice Terms</Label>
+                <Textarea rows={4} value={termsForm.proforma_terms} onChange={(e) => setTermsForm((prev) => ({ ...prev, proforma_terms: e.target.value }))} placeholder="e.g. 25% Advance today, 25% within next week, balance on delivery..." />
               </div>
-            ) : (
-              <div className="space-y-3">
-                {filteredTermsTemplates.map((term) => (
-                  <div key={term.id} className={`rounded-lg border bg-white overflow-hidden ${term.is_active ? "border-gray-200" : "border-gray-100 opacity-60"}`}>
-                    <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
-                      <div className="flex items-center gap-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          term.document_type === "quotation" ? "bg-blue-100 text-blue-700" :
-                          term.document_type === "proforma_invoice" ? "bg-purple-100 text-purple-700" :
-                          "bg-orange-100 text-orange-700"
-                        }`}>
-                          {docTypeLabels[term.document_type] || term.document_type}
-                        </span>
-                        <span className="font-semibold text-gray-800">{term.title}</span>
-                        {!term.is_active && <span className="text-xs text-gray-400">(Inactive)</span>}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button size="sm" variant="ghost" className="text-xs" onClick={() => handleToggleTermActive(term)}>
-                          {term.is_active ? "Deactivate" : "Activate"}
-                        </Button>
-                        <Button size="sm" variant="outline" className="text-xs" onClick={() => openTermModal(term)}>Edit</Button>
-                        <Button size="sm" variant="ghost" className="text-xs text-red-500 hover:text-red-700" onClick={() => handleDeleteTerm(term.id)}>Delete</Button>
-                      </div>
-                    </div>
-                    <div className="px-4 py-3 text-sm text-gray-600 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: term.content || "<em>No content</em>" }} />
-                  </div>
-                ))}
+              <div>
+                <Label>Default Attention</Label>
+                <Textarea rows={3} value={termsForm.attention} onChange={(e) => setTermsForm((prev) => ({ ...prev, attention: e.target.value }))} placeholder="e.g. Dear Sir, we thank you for the opportunity..." />
               </div>
-            )}
-
-            {/* Legacy defaults (kept for backward compatibility) */}
-            <details className="rounded-lg border border-gray-200 bg-white">
-              <summary className="px-4 py-3 cursor-pointer text-sm font-medium text-gray-600">Legacy Document Defaults (System Settings)</summary>
-              <form onSubmit={saveTermsDefaults} className="p-5 space-y-4 border-t">
-                <div>
-                  <Label>Default Terms & Conditions</Label>
-                  <Textarea rows={4} value={termsForm.terms_conditions} onChange={(e) => setTermsForm((prev) => ({ ...prev, terms_conditions: e.target.value }))} />
-                </div>
-                <div>
-                  <Label>Default Attention</Label>
-                  <Textarea rows={3} value={termsForm.attention} onChange={(e) => setTermsForm((prev) => ({ ...prev, attention: e.target.value }))} />
-                </div>
-                <div>
-                  <Label>Default Declaration</Label>
-                  <Textarea rows={3} value={termsForm.declaration} onChange={(e) => setTermsForm((prev) => ({ ...prev, declaration: e.target.value }))} />
-                </div>
-                <div>
-                  <Label>Default Special Notes</Label>
-                  <Textarea rows={3} value={termsForm.special_notes} onChange={(e) => setTermsForm((prev) => ({ ...prev, special_notes: e.target.value }))} />
-                </div>
-                <div className="flex justify-end">
-                  <Button type="submit" disabled={savingTerms}>{savingTerms ? "Saving..." : "Save Defaults"}</Button>
-                </div>
-              </form>
-            </details>
-
-            {/* Create/Edit Term Modal */}
-            {termsModalOpen && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-                <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl mx-4 max-h-[90vh] flex flex-col">
-                  <div className="px-6 py-4 border-b border-gray-200">
-                    <h3 className="text-lg font-semibold text-gray-800">{editingTerm ? "Edit Term" : "Create New Term"}</h3>
-                  </div>
-                  <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label>Document Type</Label>
-                        <select
-                          className="w-full mt-1 h-10 rounded-md border border-gray-300 px-3 text-sm"
-                          value={termForm.document_type}
-                          onChange={(e) => setTermForm((p) => ({ ...p, document_type: e.target.value }))}
-                        >
-                          <option value="quotation">Quotation</option>
-                          <option value="proforma_invoice">Proforma Invoice</option>
-                          <option value="purchase_order">Purchase Order</option>
-                        </select>
-                      </div>
-                      <div>
-                        <Label>Title</Label>
-                        <Input
-                          value={termForm.title}
-                          onChange={(e) => setTermForm((p) => ({ ...p, title: e.target.value }))}
-                          placeholder="e.g. General Terms, Export Terms, Payment Terms..."
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <Label>Content</Label>
-                      <RichTextEditor
-                        value={termForm.content}
-                        onChange={(val) => setTermForm((p) => ({ ...p, content: val }))}
-                        placeholder="Enter terms and conditions content..."
-                        className="mt-1"
-                      />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        id="term-active"
-                        checked={termForm.is_active === 1}
-                        onChange={(e) => setTermForm((p) => ({ ...p, is_active: e.target.checked ? 1 : 0 }))}
-                        className="rounded border-gray-300"
-                      />
-                      <Label htmlFor="term-active" className="mb-0">Active</Label>
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-200">
-                    <Button variant="outline" onClick={() => setTermsModalOpen(false)}>Cancel</Button>
-                    <Button onClick={handleSaveTerm} disabled={savingTerm}>
-                      {savingTerm ? "Saving..." : editingTerm ? "Update Term" : "Create Term"}
-                    </Button>
-                  </div>
-                </div>
+              <div>
+                <Label>Default Declaration</Label>
+                <Textarea rows={3} value={termsForm.declaration} onChange={(e) => setTermsForm((prev) => ({ ...prev, declaration: e.target.value }))} placeholder="e.g. Thanks & regards, Company Representative" />
               </div>
-            )}
+              <div>
+                <Label>Default Special Notes</Label>
+                <Textarea rows={3} value={termsForm.special_notes} onChange={(e) => setTermsForm((prev) => ({ ...prev, special_notes: e.target.value }))} placeholder="e.g. Additional technical notes..." />
+              </div>
+              <div className="flex justify-end">
+                <Button type="submit" disabled={savingTerms}>{savingTerms ? "Saving..." : "Save Defaults"}</Button>
+              </div>
+            </form>
           </div>
         )}
       </div>

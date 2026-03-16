@@ -81,6 +81,16 @@ export default function QuotationPrintPage() {
           }
         }
 
+        // Fetch document defaults for terms
+        let defaults = { terms_conditions: "", attention: "", declaration: "", special_notes: "" }
+        try {
+          const defRes = await fetch(`/api/system-settings/document-defaults`, { credentials: "include" })
+          if (defRes.ok) {
+            const defJson = await defRes.json()
+            defaults = { ...defaults, ...(defJson.defaults || {}) }
+          }
+        } catch { /* ignore */ }
+
         const pdfBlob = await generateDocumentPdf({
           title: "QUOTATION",
           customerName: normalizedQuotation.company_name,
@@ -109,6 +119,10 @@ export default function QuotationPrintPage() {
             gst: Number(normalizedQuotation.total_gst || 0),
             total: Number(normalizedQuotation.total_amount || 0),
           },
+          termsConditions: defaults.terms_conditions || null,
+          attention: defaults.attention || null,
+          declaration: defaults.declaration || null,
+          specialNotes: defaults.special_notes || null,
         })
 
         nextPdfUrl = URL.createObjectURL(pdfBlob)

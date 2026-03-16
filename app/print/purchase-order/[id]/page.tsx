@@ -52,6 +52,16 @@ export default function PurchaseOrderPrintPage() {
 
         if (!po) throw new Error("Purchase order not found")
 
+        // Fetch document defaults for terms
+        let defaults = { terms_conditions: "", attention: "", declaration: "", special_notes: "" }
+        try {
+          const defRes = await fetch(`/api/system-settings/document-defaults`, { credentials: "include" })
+          if (defRes.ok) {
+            const defJson = await defRes.json()
+            defaults = { ...defaults, ...(defJson.defaults || {}) }
+          }
+        } catch { /* ignore */ }
+
         // Calculate totals
         const subtotal = items.reduce((sum, item) => sum + Number(item.total_price || 0), 0)
         const gstAmount = Number(po.gst_amount || 0)
@@ -87,7 +97,10 @@ export default function PurchaseOrderPrintPage() {
             gst: gstAmount,
             total: totalAmount,
           },
-          termsConditions: po.terms_conditions || null,
+          termsConditions: po.terms_conditions || defaults.terms_conditions || null,
+          attention: defaults.attention || null,
+          declaration: defaults.declaration || null,
+          specialNotes: defaults.special_notes || null,
           customColumns: [
             { header: "Sr No", width: 30, align: "center", key: "idx" },
             { header: "Material Name", width: 140, key: "part_name" },

@@ -4,15 +4,23 @@ import { query } from '../../../../server/config/database.js';
 
 function getAssignableUsers(req, res) {
   try {
-    const users = query(
-      `SELECT u.id, u.name, u.role,
+    const designation = req.query?.designation || null;
+
+    let sql = `SELECT u.id, u.name, u.role,
               COALESCE(e.designation, '') AS designation
        FROM users u
        LEFT JOIN employees e ON e.user_id = u.id
-       WHERE u.role IN ('master_admin', 'employee')
-       ORDER BY u.name ASC`,
-      [],
-    );
+       WHERE u.role IN ('master_admin', 'employee')`;
+    const params = [];
+
+    if (designation) {
+      sql += ` AND e.designation = ?`;
+      params.push(designation);
+    }
+
+    sql += ` ORDER BY u.name ASC`;
+
+    const users = query(sql, params);
 
     return res.status(200).json({
       count: users.length,

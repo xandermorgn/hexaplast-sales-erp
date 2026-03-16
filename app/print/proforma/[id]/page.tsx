@@ -82,6 +82,16 @@ export default function ProformaPrintPage() {
           }
         }
 
+        // Fetch document defaults for terms
+        let defaults = { terms_conditions: "", proforma_terms: "", attention: "", declaration: "", special_notes: "" }
+        try {
+          const defRes = await fetch(`/api/system-settings/document-defaults`, { credentials: "include" })
+          if (defRes.ok) {
+            const defJson = await defRes.json()
+            defaults = { ...defaults, ...(defJson.defaults || {}) }
+          }
+        } catch { /* ignore */ }
+
         const advance = Number(normalizedPerforma.advance_amount || 0)
         const total = Number(normalizedPerforma.total_amount || 0)
 
@@ -115,6 +125,10 @@ export default function ProformaPrintPage() {
             advance_payment: advance,
             due_amount: total - advance,
           },
+          termsConditions: defaults.proforma_terms || defaults.terms_conditions || null,
+          attention: defaults.attention || null,
+          declaration: defaults.declaration || null,
+          specialNotes: defaults.special_notes || null,
         })
 
         nextPdfUrl = URL.createObjectURL(pdfBlob)

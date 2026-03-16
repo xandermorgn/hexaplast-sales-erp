@@ -10,6 +10,7 @@ import { run } from '../config/database.js';
 
 const DOCUMENT_SETTING_KEYS = [
   SYSTEM_SETTING_KEYS.DEFAULT_TERMS_CONDITIONS,
+  SYSTEM_SETTING_KEYS.DEFAULT_PROFORMA_TERMS,
   SYSTEM_SETTING_KEYS.DEFAULT_ATTENTION,
   SYSTEM_SETTING_KEYS.DEFAULT_DECLARATION,
   SYSTEM_SETTING_KEYS.DEFAULT_SPECIAL_NOTES,
@@ -56,6 +57,7 @@ export function updateDocumentDefaultSettings(req, res) {
 
     const nextValues = {
       [SYSTEM_SETTING_KEYS.DEFAULT_TERMS_CONDITIONS]: normalizeText(req.body?.terms_conditions),
+      [SYSTEM_SETTING_KEYS.DEFAULT_PROFORMA_TERMS]: normalizeText(req.body?.proforma_terms),
       [SYSTEM_SETTING_KEYS.DEFAULT_ATTENTION]: normalizeText(req.body?.attention),
       [SYSTEM_SETTING_KEYS.DEFAULT_DECLARATION]: normalizeText(req.body?.declaration),
       [SYSTEM_SETTING_KEYS.DEFAULT_SPECIAL_NOTES]: normalizeText(req.body?.special_notes),

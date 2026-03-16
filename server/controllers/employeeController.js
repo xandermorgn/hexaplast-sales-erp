@@ -511,40 +511,54 @@ export function deleteEmployee(req, res) {
       });
     }
 
+    if (employee.status === 'inactive') {
+      return res.status(400).json({
+        error: 'Already inactive',
+        message: 'This employee has already been deactivated'
+      });
+    }
+
     const userId = employee.user_id;
     const employeeId = employee.employee_id;
 
-    // Audit log BEFORE deletion
+    // Audit log
     logAudit({
       entity_type: ENTITY_TYPES.EMPLOYEE,
       entity_id: id,
-      action: AUDIT_ACTIONS.DELETE,
-      old_value: employee,
-      new_value: null,
+      action: AUDIT_ACTIONS.UPDATE,
+      old_value: { status: employee.status },
+      new_value: { status: 'inactive' },
       req
     });
 
-    // Invalidate ALL sessions for this user so they get auto-logged out immediately
-    const sessionsDestroyed = destroyUserSessions(userId);
-    console.log(`Destroyed ${sessionsDestroyed} session(s) for fired user ${userId}`);
+    // Set employee status to inactive (soft deactivation — data preserved)
+    run('UPDATE employees SET status = ? WHERE id = ?', ['inactive', id]);
 
-    // Hard delete in reverse order of creation (profile -> employee -> user)
-    // This ensures foreign key constraints are satisfied
-    run('DELETE FROM user_profiles WHERE user_id = ?', [userId]);
-    run('DELETE FROM employees WHERE id = ?', [id]);
-    run('DELETE FROM users WHERE id = ?', [userId]);
-
-    return res.status(200).json({
+    // Send response FIRST, then destroy sessions asynchronously
+    // (writing session file in dev triggers hot-reload which can kill the caller's session)
+    res.status(200).json({
       success: true,
-      message: 'Employee deleted successfully',
+      message: 'Employee deactivated successfully',
       employee_id: employeeId
     });
 
+    // Deferred session cleanup — runs after response is sent
+    setTimeout(() => {
+      try {
+        const sessionsDestroyed = destroyUserSessions(userId);
+        console.log(`Destroyed ${sessionsDestroyed} session(s) for deactivated user ${userId}`);
+      } catch (e) {
+        console.error('Deferred session cleanup error:', e);
+      }
+    }, 500);
+
+    return;
+
   } catch (error) {
-    console.error('Delete employee error:', error);
+    console.error('Deactivate employee error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to delete employee'
+      message: 'Failed to deactivate employee'
     });
   }
 }

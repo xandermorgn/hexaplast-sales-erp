@@ -158,6 +158,7 @@ export default function WorkOrdersPage() {
     { id: "work-orders", label: "Work Orders" },
     { id: "products", label: "Products" },
     { id: "followups", label: "Follow Ups" },
+    { id: "reports", label: "Reports" },
   ]
 
   function handleSectionChange(section: string) {
@@ -168,6 +169,7 @@ export default function WorkOrdersPage() {
       "work-orders": "/dashboard/work-orders",
       products: "/dashboard/products",
       followups: "/dashboard/followups",
+      reports: "/dashboard/reports",
     }
 
     const target = routeMap[section]

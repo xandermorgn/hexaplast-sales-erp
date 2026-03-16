@@ -61,6 +61,9 @@ export type GeneratePdfInput = {
   currency?: string
   customColumns?: { header: string; width: number; align?: "right" | "center" | "left"; key: string }[]
   termsConditions?: string | null
+  attention?: string | null
+  declaration?: string | null
+  specialNotes?: string | null
 }
 
 /* ------------------------------------------------------------------ */
@@ -118,6 +121,16 @@ function stripHtmlToLines(html: string): string[] {
   return text.split("\n").map((l: string) => l.trim()).filter((l: string) => l.length > 0)
 }
 
+/**
+ * Smart line splitter: if text contains HTML tags, strip them first.
+ * Otherwise split on newlines. Returns non-empty trimmed lines.
+ */
+function splitToLines(text: string): string[] {
+  if (!text) return []
+  if (/<[a-z][\s\S]*>/i.test(text)) return stripHtmlToLines(text)
+  return text.split("\n").map((l: string) => l.trim()).filter((l: string) => l.length > 0)
+}
+
 function makeMoney(currencyCode: string) {
   const prefix = CURRENCY_PREFIX[currencyCode] || "INR"
   const fmt = (v: number | null | undefined): string =>
@@ -134,44 +147,46 @@ function makeMoney(currencyCode: string) {
 
 const s = StyleSheet.create({
   page: {
-    paddingTop: 50,
-    paddingBottom: 90,
-    paddingHorizontal: 50,
+    paddingTop: 36,
+    paddingBottom: 80,
+    paddingHorizontal: 44,
     fontFamily: "Helvetica",
-    fontSize: 10,
+    fontSize: 9,
     color: DARK,
   },
 
-  /* header — logo left-aligned, title centered below */
-  logoWrap: {
-    alignItems: "flex-start",
-    marginBottom: 8,
+  /* header — logo left, title centered on same row */
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
   },
   logoImg: {
-    height: 55,
-    width: 200,
+    height: 42,
+    width: 120,
     objectFit: "contain" as const,
-    alignSelf: "flex-start" as const,
-    marginLeft: -8,
   },
   docTitle: {
-    fontSize: 24,
+    flex: 1,
+    fontSize: 18,
     fontFamily: "Helvetica-Bold",
     color: ORANGE,
     textAlign: "center",
     letterSpacing: 1,
-    marginBottom: 6,
+  },
+  headerSpacer: {
+    width: 120,
   },
   titleDivider: {
     height: 2,
     backgroundColor: ORANGE,
-    marginBottom: 14,
+    marginBottom: 10,
   },
 
   /* 2-column info grid */
   infoGrid: {
     flexDirection: "row",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   infoColLeft: {
     width: "55%",
@@ -182,55 +197,55 @@ const s = StyleSheet.create({
   },
   infoRow: {
     flexDirection: "row",
-    marginBottom: 6,
+    marginBottom: 4,
   },
   infoLabel: {
-    width: 100,
+    width: 95,
     fontFamily: "Helvetica-Bold",
-    fontSize: 9,
+    fontSize: 8,
     color: DARK,
   },
   infoValue: {
     flex: 1,
-    fontSize: 9,
+    fontSize: 8,
     color: "#374151",
   },
 
   /* address section below grid */
   addressSection: {
-    marginBottom: 14,
+    marginBottom: 8,
   },
   addressRow: {
     flexDirection: "row",
-    marginBottom: 4,
+    marginBottom: 3,
   },
   addressLabel: {
-    width: 100,
+    width: 95,
     fontFamily: "Helvetica-Bold",
-    fontSize: 9,
+    fontSize: 8,
     color: DARK,
   },
   addressValue: {
     flex: 1,
-    fontSize: 9,
+    fontSize: 8,
     color: "#374151",
   },
 
   /* table */
   table: {
-    marginBottom: 12,
+    marginBottom: 8,
   },
   tableHeader: {
     flexDirection: "row",
     backgroundColor: HEADER_BG,
     borderWidth: 1,
     borderColor: BORDER,
-    paddingVertical: 5,
-    paddingHorizontal: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 3,
   },
   tableHeaderText: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 8,
+    fontSize: 7.5,
     color: DARK,
   },
   tableRow: {
@@ -239,30 +254,30 @@ const s = StyleSheet.create({
     borderRightWidth: 1,
     borderBottomWidth: 1,
     borderColor: BORDER,
-    paddingVertical: 5,
-    paddingHorizontal: 4,
+    paddingVertical: 3,
+    paddingHorizontal: 3,
   },
   tableCell: {
-    fontSize: 8,
+    fontSize: 7.5,
     color: "#374151",
   },
 
   /* totals */
   totalsWrap: {
     alignItems: "flex-end",
-    marginBottom: 16,
+    marginBottom: 8,
   },
   totalsBox: {
-    width: 240,
+    width: 220,
     borderWidth: 1,
     borderColor: "#d1d5db",
-    padding: 10,
+    padding: 8,
   },
   totalsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 3,
-    fontSize: 10,
+    marginBottom: 2,
+    fontSize: 9,
   },
   totalsLabel: {
     color: DARK,
@@ -282,12 +297,12 @@ const s = StyleSheet.create({
   },
   totalsFinalLabel: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 11,
+    fontSize: 10,
     color: DARK,
   },
   totalsFinalValue: {
     fontFamily: "Helvetica-Bold",
-    fontSize: 11,
+    fontSize: 10,
     color: DARK,
     textAlign: "right",
   },
@@ -295,9 +310,9 @@ const s = StyleSheet.create({
   /* signatures */
   sigSection: {
     flexDirection: "row",
-    marginTop: 24,
-    marginBottom: 8,
-    gap: 16,
+    marginTop: 14,
+    marginBottom: 6,
+    gap: 12,
   },
   sigCol: {
     flex: 1,
@@ -307,21 +322,48 @@ const s = StyleSheet.create({
     width: "90%",
     borderBottomWidth: 1,
     borderBottomColor: "#d1d5db",
-    marginBottom: 4,
-    height: 40,
+    marginBottom: 3,
+    height: 30,
   },
   sigLabel: {
-    fontSize: 8.5,
+    fontSize: 8,
     fontFamily: "Helvetica",
     color: GRAY,
+  },
+
+  /* terms footer block (below signatures) */
+  termsBlock: {
+    marginTop: 6,
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb",
+  },
+  termsHeading: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 7.5,
+    color: DARK,
+    marginBottom: 3,
+  },
+  termsLine: {
+    fontSize: 7,
+    color: DARK,
+    lineHeight: 1.4,
+    marginBottom: 1,
+  },
+  termsSubHeading: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 7,
+    color: DARK,
+    marginTop: 4,
+    marginBottom: 2,
   },
 
   /* footer (fixed bottom) */
   footerWrap: {
     position: "absolute",
-    bottom: 20,
-    left: 50,
-    right: 50,
+    bottom: 16,
+    left: 44,
+    right: 44,
   },
   footerDivider: {
     height: 1,
@@ -337,9 +379,9 @@ const s = StyleSheet.create({
   },
   pageNumber: {
     position: "absolute",
-    bottom: 20,
-    right: 50,
-    fontSize: 8,
+    bottom: 16,
+    right: 44,
+    fontSize: 7,
     color: GRAY,
     fontFamily: "Helvetica",
   },
@@ -443,11 +485,12 @@ function HexaplastDocument(props: GeneratePdfInput) {
   return h(Document, null,
     h(Page, { size: "A4", style: s.page, wrap: true },
 
-      /* ── HEADER: logo on own line, title centered below ── */
-      h(View, { style: s.logoWrap },
+      /* ── HEADER: logo left, title centered, spacer right ── */
+      h(View, { style: s.headerRow },
         h(Image, { src: logoSrc, style: s.logoImg }),
+        h(Text, { style: s.docTitle }, title),
+        h(View, { style: s.headerSpacer }),
       ),
-      h(Text, { style: s.docTitle }, title),
       h(View, { style: s.titleDivider }),
 
       /* ── 2-COLUMN INFO GRID ─────────────────────────── */
@@ -517,19 +560,6 @@ function HexaplastDocument(props: GeneratePdfInput) {
         ),
       ),
 
-      /* ── TERMS & CONDITIONS ─────────────────────────── */
-      props.termsConditions
-        ? h(View, { style: { marginBottom: 12, marginTop: 4 } },
-            h(Text, { style: { fontFamily: "Helvetica-Bold", fontSize: 10, color: DARK, marginBottom: 6 } }, "Terms & Conditions:"),
-            ...stripHtmlToLines(props.termsConditions).map((line, i) =>
-              h(View, { key: `tc${i}`, style: { flexDirection: "row" as const, marginBottom: 3, paddingLeft: 4 } },
-                h(Text, { style: { fontSize: 8.5, color: DARK, width: 16 } }, `${i + 1}.`),
-                h(Text, { style: { fontSize: 8.5, color: "#374151", flex: 1, lineHeight: 1.5 } }, line),
-              ),
-            ),
-          )
-        : null,
-
       /* ── SIGNATURE BLOCKS ───────────────────────────── */
       h(View, { style: s.sigSection },
         ...SIGNATURE_LABELS.map((label) =>
@@ -539,6 +569,47 @@ function HexaplastDocument(props: GeneratePdfInput) {
           ),
         ),
       ),
+
+      /* ── TERMS & CONDITIONS BLOCK (below signatures) ── */
+      (props.termsConditions || props.attention || props.specialNotes || props.declaration)
+        ? h(View, { style: s.termsBlock, wrap: false },
+            props.termsConditions
+              ? h(View, { style: { marginBottom: 3 } },
+                  h(Text, { style: s.termsHeading }, "Terms & Conditions"),
+                  ...splitToLines(props.termsConditions).map((line, i) =>
+                    h(View, { key: `tc${i}`, style: { flexDirection: "row" as const, marginBottom: 1, paddingLeft: 2 } },
+                      h(Text, { style: { ...s.termsLine, width: 14 } }, `${i + 1}.`),
+                      h(Text, { style: { ...s.termsLine, flex: 1 } }, line),
+                    ),
+                  ),
+                )
+              : null,
+            props.attention
+              ? h(View, null,
+                  h(Text, { style: s.termsSubHeading }, "Attention"),
+                  ...splitToLines(props.attention).map((line, i) =>
+                    h(Text, { key: `att${i}`, style: s.termsLine }, line),
+                  ),
+                )
+              : null,
+            props.specialNotes
+              ? h(View, null,
+                  h(Text, { style: s.termsSubHeading }, "Special Notes"),
+                  ...splitToLines(props.specialNotes).map((line, i) =>
+                    h(Text, { key: `sn${i}`, style: s.termsLine }, line),
+                  ),
+                )
+              : null,
+            props.declaration
+              ? h(View, null,
+                  h(Text, { style: s.termsSubHeading }, "Declaration"),
+                  ...splitToLines(props.declaration).map((line, i) =>
+                    h(Text, { key: `dcl${i}`, style: s.termsLine }, line),
+                  ),
+                )
+              : null,
+          )
+        : null,
 
       /* ── FOOTER (every page) ────────────────────────── */
       h(View, { style: s.footerWrap, fixed: true },
