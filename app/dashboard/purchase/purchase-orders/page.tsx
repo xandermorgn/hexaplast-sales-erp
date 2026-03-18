@@ -92,6 +92,7 @@ export default function PurchaseOrdersPage() {
   const [termsConditions, setTermsConditions] = useState("")
   const [confirming, setConfirming] = useState(false)
   const [defaultPoTerms, setDefaultPoTerms] = useState("")
+  const [poCurrency, setPoCurrency] = useState("INR")
 
   function handleSectionChange(section: string) {
     const routeMap: Record<string, string> = {
@@ -197,6 +198,7 @@ export default function PurchaseOrdersPage() {
     setCurrentPOIndex(0)
     setGstAmount("")
     setTermsConditions("")
+    setPoCurrency("INR")
   }
 
   async function confirmCurrentPO() {
@@ -214,6 +216,7 @@ export default function PurchaseOrdersPage() {
           gst_amount: Number(gstAmount) || 0,
           terms_conditions: termsConditions.trim() || null,
           items: po.items,
+          currency: poCurrency,
         }),
       })
       const data = await res.json()
@@ -517,7 +520,24 @@ export default function PurchaseOrdersPage() {
                   </div>
                 </div>
 
-                {/* Terms & Conditions */}
+                {/* Currency + Terms & Conditions */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label>Currency</Label>
+                    <select
+                      className="w-full border border-gray-300 rounded-md h-10 px-3 text-sm"
+                      value={poCurrency}
+                      onChange={(e) => setPoCurrency(e.target.value)}
+                    >
+                      <option value="INR">INR - Indian Rupee</option>
+                      <option value="USD">USD - US Dollar</option>
+                      <option value="EUR">EUR - Euro</option>
+                      <option value="GBP">GBP - British Pound</option>
+                      <option value="AED">AED - UAE Dirham</option>
+                      <option value="JPY">JPY - Japanese Yen</option>
+                    </select>
+                  </div>
+                </div>
                 <div>
                   <Label>Terms & Conditions</Label>
                   <Textarea

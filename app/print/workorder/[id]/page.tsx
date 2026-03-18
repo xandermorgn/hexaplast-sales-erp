@@ -2,48 +2,24 @@
 
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
-import { generateDocumentPdf, toTitleCase } from "@/lib/print/generatePdf"
+import { generateDocumentPdf } from "@/lib/print/generatePdf"
 
 type WorkOrderItem = {
-  category_name?: string | null
-  sub_category?: string | null
   product_name?: string | null
   model_number?: string | null
-  hsn_sac_code?: string | null
   unit?: string | null
-  product_type?: string | null
   quantity: number
-  price: number
-  discount_amount: number
-  gst_percent: number
-  total: number
+  [key: string]: unknown
 }
 
 type WorkOrder = {
   id: number
   work_order_number: string
-  inquiry_id: number
-  inquiry_number?: string | null
-  company_name?: string | null
-  authorized_person?: string | null
-  authorized_phone?: string | null
-  email?: string | null
-  address?: string | null
   work_order_date?: string | null
   delivery_date?: string | null
   calibration_nabl?: string | boolean | null
-  subtotal?: number
-  total_discount?: number
-  total_gst?: number
-  total_amount?: number
   items: WorkOrderItem[]
-}
-
-type Inquiry = {
-  gst_number?: string | null
-  city?: string | null
-  state?: string | null
-  country?: string | null
+  [key: string]: unknown
 }
 
 export default function WorkOrderPrintPage() {
@@ -65,76 +41,41 @@ export default function WorkOrderPrintPage() {
         if (!workOrderRes.ok) throw new Error("Failed to load work order")
 
         const workOrderJson = await workOrderRes.json()
-        const nextWorkOrder = workOrderJson.work_order as WorkOrder
-        const normalizedWorkOrder: WorkOrder = {
-          ...nextWorkOrder,
-          items: (nextWorkOrder.items || []).map((item) => ({
-            ...item,
-            sub_category: item.sub_category || item.product_type || "-",
-          })),
-        }
-
-        let inquiryData: Inquiry = {}
-        if (nextWorkOrder?.inquiry_id) {
-          const inquiryRes = await fetch(`/api/inquiries/${nextWorkOrder.inquiry_id}`, { credentials: "include" })
-          if (inquiryRes.ok) {
-            const inquiryJson = await inquiryRes.json()
-            inquiryData = inquiryJson.inquiry || {}
-          }
-        }
-
-        // Fetch document defaults for terms
-        let defaults = { terms_conditions: "", attention: "", declaration: "", special_notes: "" }
-        try {
-          const defRes = await fetch(`/api/system-settings/document-defaults`, { credentials: "include" })
-          if (defRes.ok) {
-            const defJson = await defRes.json()
-            defaults = { ...defaults, ...(defJson.defaults || {}) }
-          }
-        } catch { /* ignore */ }
+        const wo = workOrderJson.work_order as WorkOrder
 
         const nablValue =
-          normalizedWorkOrder.calibration_nabl === true ||
-          normalizedWorkOrder.calibration_nabl === "true" ||
-          normalizedWorkOrder.calibration_nabl === "YES"
+          wo.calibration_nabl === true ||
+          wo.calibration_nabl === "true" ||
+          wo.calibration_nabl === "YES"
             ? "YES"
             : "NO"
 
+        // Work Orders are internal-only — no customer data, no terms
         const pdfBlob = await generateDocumentPdf({
           title: "WORK ORDER",
-          customerName: normalizedWorkOrder.company_name,
           leftFields: [
-            { label: "Customer Name", value: toTitleCase(normalizedWorkOrder.company_name) },
-            { label: "Contact Person", value: normalizedWorkOrder.authorized_person || "-" },
-            { label: "Phone", value: normalizedWorkOrder.authorized_phone || "-" },
-            { label: "Email", value: normalizedWorkOrder.email || "-" },
-            { label: "GST Number", value: inquiryData.gst_number || "-" },
+            { label: "Work Order No.", value: wo.work_order_number },
+            { label: "Date", value: wo.work_order_date ? new Date(wo.work_order_date).toLocaleDateString() : "-" },
+            { label: "Calibration (NABL)", value: nablValue },
+            { label: "Delivery Date", value: wo.delivery_date ? new Date(wo.delivery_date).toLocaleDateString() : "-" },
           ],
-          rightFields: [
-            { label: "Work Order No.", value: normalizedWorkOrder.work_order_number },
-            { label: "Date", value: normalizedWorkOrder.work_order_date ? new Date(normalizedWorkOrder.work_order_date).toLocaleDateString() : "-" },
-            { label: "Inquiry No.", value: normalizedWorkOrder.inquiry_number || "-" },
-            { label: "Delivery Date", value: normalizedWorkOrder.delivery_date ? new Date(normalizedWorkOrder.delivery_date).toLocaleDateString() : "-" },
-            { label: "NABL", value: nablValue },
+          items: (wo.items || []).map((item) => ({
+            ...item,
+            price: 0,
+            discount_amount: 0,
+            gst_percent: 0,
+            total: 0,
+          })),
+          customColumns: [
+            { header: "#", width: 30, align: "center", key: "idx" },
+            { header: "Product Name", width: 220, key: "product_name" },
+            { header: "Model Number", width: 140, key: "model_number" },
+            { header: "Qty", width: 60, align: "right", key: "quantity" },
+            { header: "Unit", width: 60, align: "center", key: "unit" },
           ],
-          addressFields: [
-            { label: "Address", value: toTitleCase(normalizedWorkOrder.address) },
-            { label: "City", value: toTitleCase(inquiryData.city) },
-            { label: "State", value: toTitleCase(inquiryData.state) },
-            { label: "Country", value: toTitleCase(inquiryData.country) },
-          ],
-          items: normalizedWorkOrder.items || [],
-          showCategoryColumns: false,
-          totals: {
-            subtotal: Number(normalizedWorkOrder.subtotal || 0),
-            discount: Number(normalizedWorkOrder.total_discount || 0),
-            gst: Number(normalizedWorkOrder.total_gst || 0),
-            total: Number(normalizedWorkOrder.total_amount || 0),
-          },
-          termsConditions: defaults.terms_conditions || null,
-          attention: defaults.attention || null,
-          declaration: defaults.declaration || null,
-          specialNotes: defaults.special_notes || null,
+          totals: { subtotal: 0, discount: 0, gst: 0, total: 0 },
+          hideTotals: true,
+          currency: (wo as any).currency || "INR",
         })
 
         nextPdfUrl = URL.createObjectURL(pdfBlob)

@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
 import { apiUrl } from "@/lib/api"
 import { Check, Clock, AlertTriangle, Search, ThumbsUp } from "lucide-react"
+import { getSalesMenuItems, salesRouteMap } from "@/lib/menu"
 
 type FollowUp = {
   id: number
@@ -23,16 +24,6 @@ type FollowUp = {
   entity_number: string | null
 }
 
-const menuItems = [
-  { id: "inquiries", label: "Customer Inquiries" },
-  { id: "quotations", label: "Quotations" },
-  { id: "performas", label: "Performas" },
-  { id: "work-orders", label: "Work Orders" },
-  { id: "products", label: "Products" },
-  { id: "followups", label: "Follow Ups" },
-  { id: "reports", label: "Reports" },
-]
-
 export default function FollowUpsPage() {
   const router = useRouter()
   const { user, isLoading, logout } = useAuth()
@@ -43,16 +34,10 @@ export default function FollowUpsPage() {
   const [activeTab, setActiveTab] = useState<"upcoming" | "completed" | "missed">("upcoming")
   const [searchQuery, setSearchQuery] = useState("")
 
+  const menuItems = getSalesMenuItems(user)
+
   function handleSectionChange(section: string) {
-    const routeMap: Record<string, string> = {
-      inquiries: "/dashboard/inquiries",
-      quotations: "/dashboard/quotations",
-      performas: "/dashboard/performas",
-      "work-orders": "/dashboard/work-orders",
-      products: "/dashboard/products",
-      followups: "/dashboard/followups",
-      reports: "/dashboard/reports",
-    }
+    const routeMap = salesRouteMap
     const target = routeMap[section]
     if (target) router.push(target)
   }

@@ -48,6 +48,15 @@ export type PdfTotals = {
   due_amount?: number
 }
 
+export type MachinePageData = {
+  index: number
+  machineName: string
+  modelNumber?: string | null
+  imageUrl?: string | null
+  showImage: boolean
+  specifications?: string | null
+}
+
 export type GeneratePdfInput = {
   title: "QUOTATION" | "PROFORMA INVOICE" | "WORK ORDER" | "PURCHASE ORDER"
   customerName?: string | null
@@ -64,6 +73,8 @@ export type GeneratePdfInput = {
   attention?: string | null
   declaration?: string | null
   specialNotes?: string | null
+  hideTotals?: boolean
+  machinePages?: MachinePageData[]
 }
 
 /* ------------------------------------------------------------------ */
@@ -88,6 +99,8 @@ const CURRENCY_PREFIX: Record<string, string> = {
   USD: "USD",
   EUR: "EUR",
   GBP: "GBP",
+  AED: "AED",
+  JPY: "JPY",
 }
 
 /* ------------------------------------------------------------------ */
@@ -129,6 +142,24 @@ function splitToLines(text: string): string[] {
   if (!text) return []
   if (/<[a-z][\s\S]*>/i.test(text)) return stripHtmlToLines(text)
   return text.split("\n").map((l: string) => l.trim()).filter((l: string) => l.length > 0)
+}
+
+/**
+ * Parse specifications from either plain text (newline-separated) or JSON array.
+ */
+function parseSpecifications(specs: string | null | undefined): string[] {
+  if (!specs) return []
+  const trimmed = specs.trim()
+  if (!trimmed) return []
+  // Try JSON array first
+  if (trimmed.startsWith("[")) {
+    try {
+      const arr = JSON.parse(trimmed)
+      if (Array.isArray(arr)) return arr.map((s: unknown) => String(s).trim()).filter((s: string) => s.length > 0)
+    } catch { /* not JSON, fall through */ }
+  }
+  // Plain text: split by newline
+  return trimmed.split("\n").map((l: string) => l.trim()).filter((l: string) => l.length > 0)
 }
 
 function makeMoney(currencyCode: string) {
@@ -358,6 +389,66 @@ const s = StyleSheet.create({
     marginBottom: 2,
   },
 
+  /* machine detail page styles */
+  machineTitle: {
+    fontSize: 16,
+    fontFamily: "Helvetica-Bold",
+    color: DARK,
+    textAlign: "center",
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  machineAccent: {
+    height: 2,
+    backgroundColor: ORANGE,
+    width: 120,
+    alignSelf: "center" as const,
+    marginBottom: 16,
+  },
+  machineImageWrap: {
+    alignItems: "center" as const,
+    marginBottom: 20,
+  },
+  machineImage: {
+    maxWidth: "70%",
+    maxHeight: 320,
+    objectFit: "contain" as const,
+  },
+  machineNoImage: {
+    fontSize: 10,
+    color: GRAY,
+    textAlign: "center",
+    marginBottom: 20,
+    fontStyle: "italic",
+  },
+  machineSpecHeading: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 11,
+    color: DARK,
+    marginBottom: 6,
+  },
+  machineSpecBullet: {
+    flexDirection: "row" as const,
+    marginBottom: 3,
+    paddingLeft: 8,
+  },
+  machineSpecDot: {
+    width: 12,
+    fontSize: 9,
+    color: DARK,
+  },
+  machineSpecText: {
+    flex: 1,
+    fontSize: 9,
+    color: DARK,
+    lineHeight: 1.5,
+  },
+  machineNoSpec: {
+    fontSize: 9,
+    color: GRAY,
+    fontStyle: "italic",
+  },
+
   /* footer (fixed bottom) */
   footerWrap: {
     position: "absolute",
@@ -482,16 +573,76 @@ function HexaplastDocument(props: GeneratePdfInput) {
     ? `${window.location.origin}/hexaplast-logo.png`
     : "/hexaplast-logo.png"
 
+  /* ── Shared header + footer builders ─────────────────────── */
+  const pageHeader = (pageTitle: string) => [
+    h(View, { style: s.headerRow, key: "hdr" },
+      h(Image, { src: logoSrc, style: s.logoImg }),
+      h(Text, { style: s.docTitle }, pageTitle),
+      h(View, { style: s.headerSpacer }),
+    ),
+    h(View, { style: s.titleDivider, key: "hdiv" }),
+  ]
+
+  const pageFooter = () => [
+    h(View, { style: s.footerWrap, fixed: true, key: "ft" },
+      h(View, { style: s.footerDivider }),
+      h(Text, { style: s.footerText }, FOOTER_LINE_1),
+      h(Text, { style: s.footerText }, FOOTER_LINE_2),
+      h(Text, { style: { ...s.footerText, marginTop: 2 } }, FOOTER_LINE_3),
+      h(Text, { style: s.footerText }, FOOTER_LINE_4),
+    ),
+    h(Text, {
+      style: s.pageNumber,
+      fixed: true,
+      key: "pn",
+      render: ({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) =>
+        `Page ${pageNumber} of ${totalPages}`,
+    }),
+  ]
+
+  /* ── Build machine detail pages ────────────────────────── */
+  const machineDetailPages = (props.machinePages || []).map((machine) => {
+    const specLines = parseSpecifications(machine.specifications)
+    return h(Page, { size: "A4", style: s.page, wrap: true, key: `machine-${machine.index}` },
+      ...pageHeader(title),
+
+      /* Title with index */
+      h(Text, { style: s.machineTitle }, `${machine.index}. ${machine.machineName}`),
+      h(View, { style: s.machineAccent }),
+
+      /* Image section (conditional) */
+      machine.showImage && machine.imageUrl
+        ? h(View, { style: s.machineImageWrap },
+            h(Image, { src: machine.imageUrl, style: s.machineImage }),
+          )
+        : machine.showImage && !machine.imageUrl
+          ? h(Text, { style: s.machineNoImage }, "No Image Available")
+          : null,
+
+      /* Specifications section */
+      h(View, { style: { marginTop: 8 } },
+        h(Text, { style: s.machineSpecHeading }, "Specifications:"),
+        specLines.length > 0
+          ? h(View, null,
+              ...specLines.map((line, i) =>
+                h(View, { key: `sp${i}`, style: s.machineSpecBullet },
+                  h(Text, { style: s.machineSpecDot }, "\u2022"),
+                  h(Text, { style: s.machineSpecText }, line),
+                ),
+              ),
+            )
+          : h(Text, { style: s.machineNoSpec }, "No specifications provided"),
+      ),
+
+      ...pageFooter(),
+    )
+  })
+
   return h(Document, null,
     h(Page, { size: "A4", style: s.page, wrap: true },
 
       /* ── HEADER: logo left, title centered, spacer right ── */
-      h(View, { style: s.headerRow },
-        h(Image, { src: logoSrc, style: s.logoImg }),
-        h(Text, { style: s.docTitle }, title),
-        h(View, { style: s.headerSpacer }),
-      ),
-      h(View, { style: s.titleDivider }),
+      ...pageHeader(title),
 
       /* ── 2-COLUMN INFO GRID ─────────────────────────── */
       h(View, { style: s.infoGrid },
@@ -544,21 +695,23 @@ function HexaplastDocument(props: GeneratePdfInput) {
         ),
       ),
 
-      /* ── TOTALS BOX ─────────────────────────────────── */
-      h(View, { style: s.totalsWrap },
-        h(View, { style: s.totalsBox },
-          h(TotalsRow, { label: "Subtotal", value: plain(totals.subtotal) }),
-          h(TotalsRow, { label: "Discount", value: plain(totals.discount) }),
-          h(TotalsRow, { label: "GST", value: plain(totals.gst) }),
-          h(TotalsRow, { label: "Total Amount", value: full(totals.total), bold: true }),
-          totals.advance_payment !== undefined
-            ? h(TotalsRow, { label: "Advance Payment", value: plain(totals.advance_payment) })
-            : null,
-          totals.due_amount !== undefined
-            ? h(TotalsRow, { label: "Due Amount", value: full(totals.due_amount), bold: true })
-            : null,
-        ),
-      ),
+      /* ── TOTALS BOX (hidden for internal-only docs like Work Orders) ── */
+      !props.hideTotals
+        ? h(View, { style: s.totalsWrap },
+            h(View, { style: s.totalsBox },
+              h(TotalsRow, { label: "Subtotal", value: plain(totals.subtotal) }),
+              h(TotalsRow, { label: "Discount", value: plain(totals.discount) }),
+              h(TotalsRow, { label: "GST", value: plain(totals.gst) }),
+              h(TotalsRow, { label: "Total Amount", value: full(totals.total), bold: true }),
+              totals.advance_payment !== undefined
+                ? h(TotalsRow, { label: "Advance Payment", value: plain(totals.advance_payment) })
+                : null,
+              totals.due_amount !== undefined
+                ? h(TotalsRow, { label: "Due Amount", value: full(totals.due_amount), bold: true })
+                : null,
+            ),
+          )
+        : null,
 
       /* ── SIGNATURE BLOCKS ───────────────────────────── */
       h(View, { style: s.sigSection },
@@ -612,22 +765,11 @@ function HexaplastDocument(props: GeneratePdfInput) {
         : null,
 
       /* ── FOOTER (every page) ────────────────────────── */
-      h(View, { style: s.footerWrap, fixed: true },
-        h(View, { style: s.footerDivider }),
-        h(Text, { style: s.footerText }, FOOTER_LINE_1),
-        h(Text, { style: s.footerText }, FOOTER_LINE_2),
-        h(Text, { style: { ...s.footerText, marginTop: 2 } }, FOOTER_LINE_3),
-        h(Text, { style: s.footerText }, FOOTER_LINE_4),
-      ),
-
-      /* ── PAGE NUMBERS ───────────────────────────────── */
-      h(Text, {
-        style: s.pageNumber,
-        fixed: true,
-        render: ({ pageNumber, totalPages }: { pageNumber: number; totalPages: number }) =>
-          `Page ${pageNumber} of ${totalPages}`,
-      }),
+      ...pageFooter(),
     ),
+
+    /* ── MACHINE DETAIL PAGES (after pricing + terms) ── */
+    ...machineDetailPages,
   )
 }
 

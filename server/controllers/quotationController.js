@@ -1,7 +1,7 @@
 import { get, query, run } from '../config/database.js';
 import { generateNextQuotationNumber } from '../utils/numberGenerator.js';
 import { logAudit, AUDIT_ACTIONS, ENTITY_TYPES } from '../utils/auditLogger.js';
-import { buildDateFilter } from '../utils/filtering.js';
+import { buildDateFilter, buildVisibilityFilter } from '../utils/filtering.js';
 import { calculateLineItemTotals } from '../utils/calculateTotals.js';
 import { assertValidStatus, assertValidTransition } from '../utils/statusFlow.js';
 import { emitSalesModuleUpdate } from '../utils/salesSocketEmitter.js';
@@ -92,6 +92,7 @@ function calculateLineItem(rawItem) {
     gst_percent: gstPercent,
     gst_amount: lineTotals.gst_amount,
     total: lineTotals.total,
+    show_image: rawItem?.show_image !== undefined ? rawItem.show_image : true,
   };
 }
 
@@ -143,20 +144,17 @@ function getQuotationByIdWithRelations(id) {
   const items = query(
     `SELECT
       qi.*,
-      CASE
-        WHEN qi.product_type = 'machine' THEN mp.product_name
-        ELSE sp.product_name
-      END AS product_name,
-      CASE
-        WHEN qi.product_type = 'machine' THEN mp.product_code
-        ELSE sp.product_code
-      END AS product_code,
+      COALESCE(mp.product_name, sp.product_name) AS product_name,
+      COALESCE(mp.product_code, sp.product_code) AS product_code,
+      COALESCE(mp.model_number, sp.model_number) AS model_number,
+      COALESCE(mp.specifications, sp.specifications) AS specifications,
+      COALESCE(mp.image_path, sp.image_path) AS image_path,
       (qi.quantity * qi.price) AS base_amount,
       ((qi.quantity * qi.price) - qi.discount_amount) AS taxable_amount,
       (((qi.quantity * qi.price) - qi.discount_amount) * qi.gst_percent / 100.0) AS gst_amount
     FROM quotation_items qi
-    LEFT JOIN machine_products mp ON qi.product_type = 'machine' AND mp.id = qi.product_id
-    LEFT JOIN spare_products sp ON qi.product_type = 'spare' AND sp.id = qi.product_id
+    LEFT JOIN machine_products mp ON mp.id = qi.product_id AND qi.product_type = 'machine'
+    LEFT JOIN spare_products sp ON sp.id = qi.product_id AND qi.product_type = 'spare'
     WHERE qi.quotation_id = ?
     ORDER BY qi.id ASC`,
     [id],
@@ -252,8 +250,9 @@ export function createQuotation(req, res) {
           discount_percent,
           discount_amount,
           gst_percent,
-          total
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          total,
+          show_image
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           quotationId,
           item.product_type,
@@ -264,6 +263,7 @@ export function createQuotation(req, res) {
           item.discount_amount,
           item.gst_percent,
           item.total,
+          item.show_image !== undefined ? (item.show_image ? 1 : 0) : 1,
         ],
       );
     }
@@ -319,6 +319,12 @@ export function getQuotations(req, res) {
     const filter = buildDateFilter(req.query || {}, 'q.created_at', 'q.created_by');
     const params = [...filter.params];
     sql += filter.clause;
+
+    // Data visibility: sub employees see only their own data
+    const vis = buildVisibilityFilter(req, 'q.created_by');
+    sql += vis.clause;
+    params.push(...vis.params);
+
     sql += ' ORDER BY q.created_at DESC, q.id DESC';
 
     const quotations = query(sql, params);
@@ -488,8 +494,9 @@ export function updateQuotation(req, res) {
             discount_percent,
             discount_amount,
             gst_percent,
-            total
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            total,
+            show_image
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             id,
             item.product_type,
@@ -500,6 +507,7 @@ export function updateQuotation(req, res) {
             item.discount_amount,
             item.gst_percent,
             item.total,
+            item.show_image !== undefined ? (item.show_image ? 1 : 0) : 1,
           ],
         );
       }

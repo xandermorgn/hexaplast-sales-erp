@@ -1,7 +1,7 @@
 import { get, query, run } from '../config/database.js';
 import { generateNextInquiryNumber } from '../utils/numberGenerator.js';
 import { logAudit, AUDIT_ACTIONS, ENTITY_TYPES } from '../utils/auditLogger.js';
-import { buildDateFilter } from '../utils/filtering.js';
+import { buildDateFilter, buildVisibilityFilter } from '../utils/filtering.js';
 import { assertValidStatus } from '../utils/statusFlow.js';
 import { emitSalesModuleUpdate } from '../utils/salesSocketEmitter.js';
 
@@ -47,6 +47,7 @@ export function createInquiry(req, res) {
         authorized_phone,
         email,
         alternate_email,
+        alternate_email_2,
         designation,
         gst_number,
         address,
@@ -61,8 +62,9 @@ export function createInquiry(req, res) {
         remarks,
         followup,
         status,
+        inquiry_date,
         is_deleted
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       [
         inquiry_number,
         created_by,
@@ -71,6 +73,7 @@ export function createInquiry(req, res) {
         req.body?.authorized_phone || null,
         req.body?.email || null,
         req.body?.alternate_email || null,
+        req.body?.alternate_email_2 || null,
         req.body?.designation || null,
         req.body?.gst_number || null,
         req.body?.address || null,
@@ -85,6 +88,7 @@ export function createInquiry(req, res) {
         req.body?.remarks || null,
         req.body?.followup || null,
         inputStatus,
+        req.body?.inquiry_date || new Date().toISOString().split('T')[0],
       ],
     );
 
@@ -124,6 +128,11 @@ export function getInquiries(req, res) {
     const dateFilter = buildDateFilter(req.query || {}, 'ci.created_at', 'ci.created_by');
     sql += dateFilter.clause;
     params.push(...dateFilter.params);
+
+    // Data visibility: sub employees see only their own data
+    const vis = buildVisibilityFilter(req, 'ci.created_by');
+    sql += vis.clause;
+    params.push(...vis.params);
 
     if (req.query?.assigned_to !== undefined && req.query?.assigned_to !== null && req.query?.assigned_to !== '') {
       const assignedToId = toNullableInt(req.query.assigned_to);
@@ -199,6 +208,7 @@ export function updateInquiry(req, res) {
       'authorized_phone',
       'email',
       'alternate_email',
+      'alternate_email_2',
       'designation',
       'gst_number',
       'address',
@@ -211,6 +221,7 @@ export function updateInquiry(req, res) {
       'city',
       'remarks',
       'followup',
+      'inquiry_date',
     ];
 
     for (const field of textFields) {

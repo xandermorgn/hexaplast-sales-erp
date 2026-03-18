@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
 import { apiUrl } from "@/lib/api"
 import { MultiSelectFilter } from "@/components/ui/multi-select-filter"
+import { getSalesMenuItems, salesRouteMap } from "@/lib/menu"
 import * as XLSX from "xlsx"
 
 /* ── Types ── */
@@ -74,21 +75,12 @@ type WorkOrderRow = {
 
 type ActiveTab = "inquiries" | "quotations" | "performas" | "workorders"
 
-const menuItems = [
-  { id: "inquiries", label: "Customer Inquiries" },
-  { id: "quotations", label: "Quotations" },
-  { id: "performas", label: "Performas" },
-  { id: "work-orders", label: "Work Orders" },
-  { id: "products", label: "Products" },
-  { id: "followups", label: "Follow Ups" },
-  { id: "reports", label: "Reports" },
-]
-
 export default function ReportsPage() {
   const router = useRouter()
   const { user, isLoading, logout } = useAuth()
   const { toast } = useToast()
 
+  const menuItems = getSalesMenuItems(user)
   const [activeSection, setActiveSection] = useState("reports")
   const [activeTab, setActiveTab] = useState<ActiveTab>("inquiries")
 
@@ -112,16 +104,7 @@ export default function ReportsPage() {
   const [dateTo, setDateTo] = useState("")
 
   function handleSectionChange(section: string) {
-    const routeMap: Record<string, string> = {
-      inquiries: "/dashboard/inquiries",
-      quotations: "/dashboard/quotations",
-      performas: "/dashboard/performas",
-      "work-orders": "/dashboard/work-orders",
-      products: "/dashboard/products",
-      followups: "/dashboard/followups",
-      reports: "/dashboard/reports",
-    }
-    const target = routeMap[section]
+    const target = salesRouteMap[section]
     if (target) router.push(target)
   }
 

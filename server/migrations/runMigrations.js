@@ -26,6 +26,9 @@ import { up as up009 } from './009_create_notifications_audit_tables.js';
 import { up as up010 } from './010_purchase_order_gst_terms.js';
 import { up as up011 } from './011_create_terms_conditions_table.js';
 import { up as up012 } from './012_subcategories_quotation_type_dropdowns.js';
+import { up as up013 } from './013_role_type_inquiry_fields.js';
+import { up as up014 } from './014_quotation_show_image.js';
+import { up as up015 } from './015_document_currency.js';
 
 // ── Backup helper ──────────────────────────────────────────────────────────
 
@@ -62,6 +65,9 @@ const MIGRATIONS = [
   { version: 10, name: '010_purchase_order_gst_terms', up: up010 },
   { version: 11, name: '011_create_terms_conditions_table', up: up011 },
   { version: 12, name: '012_subcategories_quotation_type_dropdowns', up: up012 },
+  { version: 13, name: '013_role_type_inquiry_fields', up: up013 },
+  { version: 14, name: '014_quotation_show_image', up: up014 },
+  { version: 15, name: '015_document_currency', up: up015 },
 ];
 
 // ── Main runner ────────────────────────────────────────────────────────────

@@ -105,10 +105,10 @@ export async function createEmployee(req, res) {
   let createdUserId = null;
   
   try {
-    if (req.user?.role !== 'master_admin') {
+    if (req.user?.role !== 'master_admin' && req.user?.role !== 'employee') {
       return res.status(403).json({
         success: false,
-        message: 'Access denied. Only master_admin can create employees'
+        message: 'Access denied. Only admins and employees can create employees'
       });
     }
 
@@ -120,7 +120,8 @@ export async function createEmployee(req, res) {
       contact_number,
       email,
       designation,
-      role = 'employee'
+      role = 'employee',
+      role_type = 'sub'
     } = req.body;
 
     // Validation: Required fields for USER creation
@@ -213,10 +214,14 @@ export async function createEmployee(req, res) {
     // ========================================
     const password_hash = await hashPassword(password);
     
+    // Validate role_type
+    const validRoleTypes = ['main', 'sub', 'regular'];
+    const safeRoleType = validRoleTypes.includes(role_type) ? role_type : 'sub';
+
     run(
-      `INSERT INTO users (login_id, password_hash, name, role)
-       VALUES (?, ?, ?, ?)`,
-      [login_id, password_hash, full_name, role]
+      `INSERT INTO users (login_id, password_hash, name, role, role_type)
+       VALUES (?, ?, ?, ?, ?)`,
+      [login_id, password_hash, full_name, role, safeRoleType]
     );
 
     // Get the created user ID
@@ -316,6 +321,7 @@ export function getAllEmployees(req, res) {
         u.login_id,
         u.name as user_name,
         u.role,
+        u.role_type,
         u.created_at,
         up.photo_data,
         up.photo_mime
@@ -498,6 +504,41 @@ export function updateEmployee(req, res) {
  * Removes employee, user, and user_profile records
  * This completely removes access to the system
  */
+/**
+ * Get all users (safe — no passwords or hashes)
+ * GET /api/users/all
+ * Accessible by main employees and master_admin
+ */
+export function getAllUsers(req, res) {
+  try {
+    const rows = query(`
+      SELECT
+        u.id,
+        u.login_id,
+        u.name,
+        u.role,
+        u.role_type,
+        u.created_at,
+        e.employee_id,
+        e.full_name,
+        e.email,
+        e.contact_number,
+        e.designation,
+        e.status
+      FROM users u
+      LEFT JOIN employees e ON e.user_id = u.id
+      WHERE u.login_id != 'master'
+        AND u.role != 'server_admin'
+      ORDER BY u.id ASC
+    `);
+
+    return res.status(200).json({ count: rows.length, users: rows });
+  } catch (error) {
+    console.error('Get all users error:', error);
+    return res.status(500).json({ error: 'Internal server error', message: 'Failed to fetch users' });
+  }
+}
+
 export function deleteEmployee(req, res) {
   try {
     const { id } = req.params;

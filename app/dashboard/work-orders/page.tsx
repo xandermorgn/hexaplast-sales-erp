@@ -17,6 +17,7 @@ import { useSilentRefresh } from "@/hooks/use-silent-refresh"
 import { parseNum } from "@/lib/parse-number"
 import { FollowUpSection } from "@/components/follow-up-section"
 import { MultiSelectFilter } from "@/components/ui/multi-select-filter"
+import { getSalesMenuItems, salesRouteMap } from "@/lib/menu"
 
 type Inquiry = {
   id: number
@@ -151,33 +152,11 @@ export default function WorkOrdersPage() {
   const { categoryMap } = useCategories()
 
   const [activeSection, setActiveSection] = useState("work-orders")
-  const menuItems = [
-    { id: "inquiries", label: "Customer Inquiries" },
-    { id: "quotations", label: "Quotations" },
-    { id: "performas", label: "Performas" },
-    { id: "work-orders", label: "Work Orders" },
-    { id: "products", label: "Products" },
-    { id: "followups", label: "Follow Ups" },
-    { id: "reports", label: "Reports" },
-  ]
+  const menuItems = getSalesMenuItems(user)
 
   function handleSectionChange(section: string) {
-    const routeMap: Record<string, string> = {
-      inquiries: "/dashboard/inquiries",
-      quotations: "/dashboard/quotations",
-      performas: "/dashboard/performas",
-      "work-orders": "/dashboard/work-orders",
-      products: "/dashboard/products",
-      followups: "/dashboard/followups",
-      reports: "/dashboard/reports",
-    }
-
-    const target = routeMap[section]
-    if (target) {
-      router.push(target)
-      return
-    }
-
+    const target = salesRouteMap[section]
+    if (target) { router.push(target); return }
     setActiveSection("work-orders")
   }
 
@@ -210,6 +189,7 @@ export default function WorkOrdersPage() {
   const [advanceDate, setAdvanceDate] = useState("")
   const [advanceDescription, setAdvanceDescription] = useState("")
   const [advanceAmount, setAdvanceAmount] = useState("0")
+  const [currency, setCurrency] = useState<string>("INR")
   const [pendingFollowUps, setPendingFollowUps] = useState<{ note: string; reminder_date: string }[]>([])
   const [subcategories, setSubcategories] = useState<{ id: number; name: string; products: { product_id: number; product_type: string; sales_price: number | null; gst_percent: number | null }[] }[]>([])
 
@@ -436,6 +416,7 @@ export default function WorkOrdersPage() {
     setAdvanceDate("")
     setAdvanceDescription("")
     setAdvanceAmount("0")
+    setCurrency("INR")
     setPendingFollowUps([])
   }
 
@@ -522,6 +503,7 @@ export default function WorkOrdersPage() {
         advance_date: advanceDate || null,
         advance_description: advanceDescription || null,
         advance_amount: parseNum(advanceAmount),
+        currency,
       }
 
       const isUpdate = Boolean(editingId)
@@ -586,6 +568,7 @@ export default function WorkOrdersPage() {
       setAdvanceDate(wo.advance_date || "")
       setAdvanceDescription(wo.advance_description || "")
       setAdvanceAmount(String(wo.advance_amount || 0))
+      setCurrency((wo as any).currency || "INR")
       setShowForm(true)
 
       setItems(
@@ -729,6 +712,21 @@ export default function WorkOrdersPage() {
             <div>
               <Label>Work Order Date</Label>
               <Input type="date" value={workOrderDate} readOnly className="bg-gray-50 cursor-not-allowed" />
+            </div>
+            <div>
+              <Label>Currency</Label>
+              <select
+                className="w-full border border-gray-300 rounded-md h-10 px-3"
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+              >
+                <option value="INR">INR - Indian Rupee</option>
+                <option value="USD">USD - US Dollar</option>
+                <option value="EUR">EUR - Euro</option>
+                <option value="GBP">GBP - British Pound</option>
+                <option value="AED">AED - UAE Dirham</option>
+                <option value="JPY">JPY - Japanese Yen</option>
+              </select>
             </div>
           </div>
 

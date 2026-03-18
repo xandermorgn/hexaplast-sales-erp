@@ -323,10 +323,12 @@ export function confirmPurchaseOrder(req, res) {
     const gst = Number(gst_amount) || 0;
     const totalAmount = subtotal + gst;
 
+    const poCurrency = req.body?.currency || 'INR';
+
     const poResult = run(
-      `INSERT INTO purchase_orders (po_number, vendor_id, status, total_amount, gst_amount, terms_conditions)
-       VALUES (?, ?, 'draft', ?, ?, ?)`,
-      [poNumber, Number(vendor_id), totalAmount, gst, terms_conditions || null]
+      `INSERT INTO purchase_orders (po_number, vendor_id, status, total_amount, gst_amount, terms_conditions, currency)
+       VALUES (?, ?, 'draft', ?, ?, ?, ?)`,
+      [poNumber, Number(vendor_id), totalAmount, gst, terms_conditions || null, poCurrency]
     );
 
     const poId = poResult.lastInsertRowid;

@@ -163,11 +163,14 @@ export function getCurrentUser(req, res) {
       'employee': 'Employee'
     };
 
-    // Look up designation for employees
+    // Look up designation and role_type for employees
     let designation = null;
+    let role_type = null;
     if (session.role === 'employee' && session.userId) {
       const emp = get('SELECT designation FROM employees WHERE user_id = ?', [session.userId]);
       if (emp) designation = emp.designation;
+      const usr = get('SELECT role_type FROM users WHERE id = ?', [session.userId]);
+      if (usr) role_type = usr.role_type;
     }
     
     return res.status(200).json({
@@ -178,7 +181,8 @@ export function getCurrentUser(req, res) {
         name: session.name,
         role: session.role,
         roleName: roleMap[session.role] || session.role,
-        designation
+        designation,
+        role_type
       }
     });
     

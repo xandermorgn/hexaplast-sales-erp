@@ -314,7 +314,7 @@ export function DashboardLayout({
   }, [profileData])
 
   const getInitials = (name: string) => {
-    return name.charAt(0).toUpperCase()
+    return (name || "?").charAt(0).toUpperCase()
   }
 
   const handleButtonClick = (e: React.MouseEvent<HTMLButtonElement>, itemId: string) => {

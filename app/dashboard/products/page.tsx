@@ -14,6 +14,7 @@ import { useGeoCurrencies } from "@/hooks/use-geo"
 import { useCategories, type Category } from "@/hooks/use-categories"
 import { apiUrl } from "@/lib/api"
 import { Pencil, Trash2, Plus, X } from "lucide-react"
+import { getSalesMenuItems, salesRouteMap } from "@/lib/menu"
 
 type ProductTab = "machines" | "spares" | "categories" | "subcategories"
 
@@ -110,33 +111,11 @@ export default function ProductsPage() {
   const [subcatSaving, setSubcatSaving] = useState(false)
   const [deletingSubcatId, setDeletingSubcatId] = useState<number | null>(null)
 
-  const menuItems = [
-    { id: "inquiries", label: "Customer Inquiries" },
-    { id: "quotations", label: "Quotations" },
-    { id: "performas", label: "Performas" },
-    { id: "work-orders", label: "Work Orders" },
-    { id: "products", label: "Products" },
-    { id: "followups", label: "Follow Ups" },
-    { id: "reports", label: "Reports" },
-  ]
+  const menuItems = getSalesMenuItems(user)
 
   function handleSectionChange(section: string) {
-    const routeMap: Record<string, string> = {
-      inquiries: "/dashboard/inquiries",
-      quotations: "/dashboard/quotations",
-      performas: "/dashboard/performas",
-      "work-orders": "/dashboard/work-orders",
-      products: "/dashboard/products",
-      followups: "/dashboard/followups",
-      reports: "/dashboard/reports",
-    }
-
-    const target = routeMap[section]
-    if (target) {
-      router.push(target)
-      return
-    }
-
+    const target = salesRouteMap[section]
+    if (target) { router.push(target); return }
     setActiveSection("products")
   }
 

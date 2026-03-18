@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
 import { generateDocumentPdf, toTitleCase } from "@/lib/print/generatePdf"
+import type { MachinePageData } from "@/lib/print/generatePdf"
 
 type QuotationItem = {
   category_name?: string | null
@@ -17,6 +18,9 @@ type QuotationItem = {
   discount_amount: number
   gst_percent: number
   total: number
+  show_image?: number | boolean
+  specifications?: string | null
+  image_path?: string | null
 }
 
 type Quotation = {
@@ -91,6 +95,36 @@ export default function QuotationPrintPage() {
           }
         } catch { /* ignore */ }
 
+        // Build machine detail pages for ALL items (do NOT skip partial data)
+        const origin = typeof window !== "undefined" ? window.location.origin : ""
+        const allItems = normalizedQuotation.items || []
+        console.log("QUOTATION ITEMS FOR MACHINE PAGES:", allItems)
+
+        const machinePages: MachinePageData[] = allItems.map((item, idx) => {
+          let imageUrl: string | null = null
+          if (item.image_path) {
+            if (item.image_path.startsWith("http")) {
+              imageUrl = item.image_path
+            } else {
+              // image_path from DB is like "/uploads/product_images/file.jpg"
+              // serve-upload API expects path relative to server/uploads/
+              // so strip leading "/uploads/" and build /api/serve-upload/...
+              const relative = item.image_path.replace(/^\/?uploads\//, "")
+              imageUrl = `${origin}/api/serve-upload/${relative}`
+            }
+          }
+          return {
+            index: idx + 1,
+            machineName: item.product_name || "Unknown Product",
+            modelNumber: item.model_number || null,
+            imageUrl,
+            showImage: item.show_image !== 0 && item.show_image !== false,
+            specifications: item.specifications || "No specifications provided",
+          }
+        })
+
+        console.log("MACHINE PAGES:", machinePages)
+
         const pdfBlob = await generateDocumentPdf({
           title: "QUOTATION",
           customerName: normalizedQuotation.company_name,
@@ -123,6 +157,8 @@ export default function QuotationPrintPage() {
           attention: defaults.attention || null,
           declaration: defaults.declaration || null,
           specialNotes: defaults.special_notes || null,
+          currency: (normalizedQuotation as any).currency || "INR",
+          machinePages,
         })
 
         nextPdfUrl = URL.createObjectURL(pdfBlob)

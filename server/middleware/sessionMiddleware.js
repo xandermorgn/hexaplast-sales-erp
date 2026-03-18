@@ -4,6 +4,7 @@
  */
 
 import { validateSession } from '../utils/session.js';
+import { get } from '../config/database.js';
 
 // Cookie name for session token
 export const SESSION_COOKIE_NAME = 'hexaplast_session';
@@ -45,11 +46,18 @@ export function requireSession(req, res, next) {
     }
     
     // Attach user info to request
+    let role_type = null;
+    if (session.role === 'employee' && session.userId) {
+      const usr = get('SELECT role_type FROM users WHERE id = ?', [session.userId]);
+      if (usr) role_type = usr.role_type;
+    }
+
     req.user = {
       id: session.userId,
       loginId: session.loginId,
       name: session.name,
-      role: session.role
+      role: session.role,
+      role_type
     };
     req.sessionToken = token;
     

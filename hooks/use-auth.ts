@@ -10,6 +10,7 @@ interface User {
   role: string
   roleName: string
   designation?: string | null
+  role_type?: string | null
 }
 
 interface AuthState {

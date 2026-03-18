@@ -1,7 +1,7 @@
 import { get, query, run } from '../config/database.js';
 import { generateNextPerformaNumber } from '../utils/numberGenerator.js';
 import { logAudit, AUDIT_ACTIONS, ENTITY_TYPES } from '../utils/auditLogger.js';
-import { buildDateFilter } from '../utils/filtering.js';
+import { buildDateFilter, buildVisibilityFilter } from '../utils/filtering.js';
 import { calculateLineItemTotals } from '../utils/calculateTotals.js';
 import { assertValidStatus, assertValidTransition } from '../utils/statusFlow.js';
 import { emitSalesModuleUpdate } from '../utils/salesSocketEmitter.js';
@@ -132,7 +132,7 @@ function getPerformaByIdWithRelations(id) {
   return { ...performa, items };
 }
 
-function insertPerforma({ inquiry_id, quotation_id = null, created_by, status, next_followup, terms_conditions, attention, declaration, special_notes, items }) {
+function insertPerforma({ inquiry_id, quotation_id = null, created_by, status, next_followup, terms_conditions, attention, declaration, special_notes, currency = 'INR', items }) {
   const calculated = calculateItems(items);
   const performa_number = generateNextPerformaNumber();
 
@@ -152,8 +152,9 @@ function insertPerforma({ inquiry_id, quotation_id = null, created_by, status, n
       attention,
       declaration,
       special_notes,
+      currency,
       is_deleted
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
     [
       performa_number,
       quotation_id,
@@ -169,6 +170,7 @@ function insertPerforma({ inquiry_id, quotation_id = null, created_by, status, n
       attention || null,
       declaration || null,
       special_notes || null,
+      currency,
     ],
   );
 
@@ -248,6 +250,7 @@ export function createPerforma(req, res) {
       attention: hasAttention ? req.body.attention : defaults.attention,
       declaration: hasDeclaration ? req.body.declaration : defaults.declaration,
       special_notes: hasSpecialNotes ? req.body.special_notes : defaults.special_notes,
+      currency: req.body?.currency || 'INR',
       items: rawItems,
     });
 
@@ -324,6 +327,7 @@ export function createPerformaFromQuotation(req, res) {
       special_notes: Object.prototype.hasOwnProperty.call(req.body || {}, 'special_notes')
         ? req.body.special_notes
         : (quotation.special_notes || defaults.special_notes),
+      currency: req.body?.currency || quotation.currency || 'INR',
       items: quotationItems,
     });
 
@@ -373,6 +377,12 @@ export function getPerformas(req, res) {
     const filter = buildDateFilter(req.query || {}, 'p.created_at', 'p.created_by');
     const params = [...filter.params];
     sql += filter.clause;
+
+    // Data visibility: sub employees see only their own data
+    const vis = buildVisibilityFilter(req, 'p.created_by');
+    sql += vis.clause;
+    params.push(...vis.params);
+
     sql += ' ORDER BY p.created_at DESC, p.id DESC';
 
     const performas = query(sql, params);
@@ -480,6 +490,8 @@ export function updatePerforma(req, res) {
       }
     }
 
+    const updatedCurrency = req.body?.currency || existing.currency || 'INR';
+
     run(
       `UPDATE performa_invoices
        SET inquiry_id = ?,
@@ -493,7 +505,8 @@ export function updatePerforma(req, res) {
            terms_conditions = ?,
            attention = ?,
            declaration = ?,
-           special_notes = ?
+           special_notes = ?,
+           currency = ?
        WHERE id = ? AND is_deleted = 0`,
       [
         inquiry_id,
@@ -508,6 +521,7 @@ export function updatePerforma(req, res) {
         Object.prototype.hasOwnProperty.call(req.body || {}, 'attention') ? (req.body.attention || null) : existing.attention,
         Object.prototype.hasOwnProperty.call(req.body || {}, 'declaration') ? (req.body.declaration || null) : existing.declaration,
         Object.prototype.hasOwnProperty.call(req.body || {}, 'special_notes') ? (req.body.special_notes || null) : existing.special_notes,
+        updatedCurrency,
         id,
       ],
     );

@@ -21,6 +21,7 @@ type Employee = {
   status: string
   designation: string | null
   photo_data_uri: string | null
+  role_type: string | null
 }
 
 type WorkOrderRow = {
@@ -112,6 +113,7 @@ export default function MasterAdminPage() {
     contact_number: "",
     email: "",
     designation: "Sales Employee",
+    role_type: "sub",
   })
 
   const [creatingEmployee, setCreatingEmployee] = useState(false)
@@ -205,7 +207,7 @@ export default function MasterAdminPage() {
   // Socket.io real-time refresh disabled – will be replaced with polling/SSE
 
   function openEmployeeModal() {
-    setEmployeeForm({ login_id: "", password: "", full_name: "", contact_number: "", email: "", designation: "Sales Employee" })
+    setEmployeeForm({ login_id: "", password: "", full_name: "", contact_number: "", email: "", designation: "Sales Employee", role_type: "sub" })
     setShowPassword(false)
     setEmployeeError("")
     setEmployeeFieldError("")
@@ -485,6 +487,7 @@ export default function MasterAdminPage() {
                     <th className="px-3 py-2 text-left">Email</th>
                     <th className="px-3 py-2 text-left">Phone</th>
                     <th className="px-3 py-2 text-left">Designation</th>
+                    <th className="px-3 py-2 text-left">Role Type</th>
                     <th className="px-3 py-2 text-left">Status</th>
                     <th className="px-3 py-2 text-left">Action</th>
                   </tr>
@@ -511,6 +514,15 @@ export default function MasterAdminPage() {
                         <td className="px-3 py-2">{employee.email || "-"}</td>
                         <td className="px-3 py-2">{employee.contact_number || "-"}</td>
                         <td className="px-3 py-2">{employee.designation || "-"}</td>
+                        <td className="px-3 py-2">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                            employee.role_type === "main" ? "bg-blue-100 text-blue-700" :
+                            employee.role_type === "sub" ? "bg-yellow-100 text-yellow-700" :
+                            employee.role_type === "regular" ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-600"
+                          }`}>
+                            {employee.role_type === "main" ? "Main" : employee.role_type === "sub" ? "Sub" : employee.role_type === "regular" ? "Regular" : "-"}
+                          </span>
+                        </td>
                         <td className="px-3 py-2">
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${employee.status === "active" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
                             {employee.status}
@@ -619,10 +631,34 @@ export default function MasterAdminPage() {
                         <select
                           className="w-full border border-gray-300 rounded-md h-10 px-3 text-sm"
                           value={employeeForm.designation || "Sales Employee"}
-                          onChange={(e) => setEmployeeForm((prev) => ({ ...prev, designation: e.target.value }))}
+                          onChange={(e) => {
+                            const des = e.target.value
+                            setEmployeeForm((prev) => ({
+                              ...prev,
+                              designation: des,
+                              role_type: des === "Purchase Employee" ? "regular" : prev.role_type === "regular" ? "sub" : prev.role_type,
+                            }))
+                          }}
                         >
                           <option value="Sales Employee">Sales Employee</option>
                           <option value="Purchase Employee">Purchase Employee</option>
+                        </select>
+                      </div>
+                      <div>
+                        <Label>Role Type</Label>
+                        <select
+                          className="w-full border border-gray-300 rounded-md h-10 px-3 text-sm"
+                          value={employeeForm.role_type}
+                          onChange={(e) => setEmployeeForm((prev) => ({ ...prev, role_type: e.target.value }))}
+                        >
+                          {employeeForm.designation === "Purchase Employee" ? (
+                            <option value="regular">Regular (Purchase)</option>
+                          ) : (
+                            <>
+                              <option value="main">Main Employee (Full Access)</option>
+                              <option value="sub">Sub Employee (Own Data Only)</option>
+                            </>
+                          )}
                         </select>
                       </div>
                       <div>

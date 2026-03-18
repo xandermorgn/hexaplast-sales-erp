@@ -18,6 +18,7 @@ import { DynamicDropdown } from "@/components/ui/dynamic-dropdown"
 import { MultiSelectFilter } from "@/components/ui/multi-select-filter"
 import { useDropdownValues } from "@/hooks/use-dropdown-values"
 import { Search } from "lucide-react"
+import { getSalesMenuItems, salesRouteMap } from "@/lib/menu"
 
 type AssignableUser = {
   id: number
@@ -42,6 +43,7 @@ interface Inquiry {
   assigned_to: number | null
   authorized_phone: string | null
   alternate_email: string | null
+  alternate_email_2: string | null
   designation: string | null
   gst_number: string | null
   address: string | null
@@ -51,6 +53,7 @@ interface Inquiry {
   state: string | null
   city: string | null
   remarks: string | null
+  inquiry_date: string | null
 }
 
 type InquiryForm = {
@@ -59,6 +62,7 @@ type InquiryForm = {
   authorized_phone: string
   email: string
   alternate_email: string
+  alternate_email_2: string
   designation: string
   gst_number: string
   address: string
@@ -72,6 +76,7 @@ type InquiryForm = {
   city: string
   remarks: string
   followup: string
+  inquiry_date: string
 }
 
 const initialForm: InquiryForm = {
@@ -80,6 +85,7 @@ const initialForm: InquiryForm = {
   authorized_phone: "",
   email: "",
   alternate_email: "",
+  alternate_email_2: "",
   designation: "",
   gst_number: "",
   address: "",
@@ -93,6 +99,7 @@ const initialForm: InquiryForm = {
   city: "",
   remarks: "",
   followup: "",
+  inquiry_date: new Date().toISOString().split("T")[0],
 }
 
 export default function CustomerInquiriesPage() {
@@ -141,33 +148,11 @@ export default function CustomerInquiriesPage() {
       .catch(() => {})
   }, [])
 
-  const menuItems = [
-    { id: "inquiries", label: "Customer Inquiries" },
-    { id: "quotations", label: "Quotations" },
-    { id: "performas", label: "Performas" },
-    { id: "work-orders", label: "Work Orders" },
-    { id: "products", label: "Products" },
-    { id: "followups", label: "Follow Ups" },
-    { id: "reports", label: "Reports" },
-  ]
+  const menuItems = getSalesMenuItems(user)
 
   function handleSectionChange(section: string) {
-    const routeMap: Record<string, string> = {
-      inquiries: "/dashboard/inquiries",
-      quotations: "/dashboard/quotations",
-      performas: "/dashboard/performas",
-      "work-orders": "/dashboard/work-orders",
-      products: "/dashboard/products",
-      followups: "/dashboard/followups",
-      reports: "/dashboard/reports",
-    }
-
-    const target = routeMap[section]
-    if (target) {
-      router.push(target)
-      return
-    }
-
+    const target = salesRouteMap[section]
+    if (target) { router.push(target); return }
     setActiveSection("inquiries")
   }
 
@@ -231,6 +216,7 @@ export default function CustomerInquiriesPage() {
       authorized_phone: item.authorized_phone || "",
       email: item.email || "",
       alternate_email: item.alternate_email || "",
+      alternate_email_2: item.alternate_email_2 || "",
       designation: item.designation || "",
       gst_number: item.gst_number || "",
       address: item.address || "",
@@ -244,6 +230,7 @@ export default function CustomerInquiriesPage() {
       city: item.city || "",
       remarks: item.remarks || "",
       followup: item.followup || "",
+      inquiry_date: item.inquiry_date || new Date().toISOString().split("T")[0],
     })
     // Resolve geo IDs from names for editing
     const matchedCountry = countries.find((c) => c.name === item.country)
@@ -414,6 +401,14 @@ export default function CustomerInquiriesPage() {
               <div>
                 <Label>Alternate Email</Label>
                 <Input value={form.alternate_email} onChange={(e) => setForm({ ...form, alternate_email: e.target.value })} />
+              </div>
+              <div>
+                <Label>Alternate Email 2</Label>
+                <Input value={form.alternate_email_2} onChange={(e) => setForm({ ...form, alternate_email_2: e.target.value })} />
+              </div>
+              <div>
+                <Label>Inquiry Date</Label>
+                <Input type="date" value={form.inquiry_date} onChange={(e) => setForm({ ...form, inquiry_date: e.target.value })} />
               </div>
               <div>
                 <Label>Designation</Label>

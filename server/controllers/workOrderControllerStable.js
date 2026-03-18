@@ -1,7 +1,7 @@
 import { get, query, run } from '../config/database.js';
 import { generateNextWorkOrderNumber } from '../utils/numberGenerator.js';
 import { logAudit, AUDIT_ACTIONS, ENTITY_TYPES } from '../utils/auditLogger.js';
-import { buildDateFilter } from '../utils/filtering.js';
+import { buildDateFilter, buildVisibilityFilter } from '../utils/filtering.js';
 import { calculateLineItemTotals } from '../utils/calculateTotals.js';
 import { assertValidStatus, assertValidTransition } from '../utils/statusFlow.js';
 import { emitSalesModuleUpdate } from '../utils/salesSocketEmitter.js';
@@ -210,7 +210,7 @@ async function pushWorkOrderToProduction(workOrder) {
   return responseData;
 }
 
-function insertWorkOrder({ performa_id = null, quotation_id = null, inquiry_id, created_by, prepared_by, checked_by, approved_by, status, work_order_date, calibration_nabl, packing, delivery_date, remarks, apply_gst, extra_charge_gst_percent, extra_charge_1, extra_charge_2, advance_display, advance_date, advance_description, advance_amount, rawItems }) {
+function insertWorkOrder({ performa_id = null, quotation_id = null, inquiry_id, created_by, prepared_by, checked_by, approved_by, status, work_order_date, calibration_nabl, packing, delivery_date, remarks, apply_gst, extra_charge_gst_percent, extra_charge_1, extra_charge_2, advance_display, advance_date, advance_description, advance_amount, currency = 'INR', rawItems }) {
   const calculated = calculateItems(rawItems);
   const work_order_number = generateNextWorkOrderNumber();
 
@@ -242,8 +242,9 @@ function insertWorkOrder({ performa_id = null, quotation_id = null, inquiry_id, 
       advance_date,
       advance_description,
       advance_amount,
+      currency,
       is_deleted
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
     [
       work_order_number,
       performa_id,
@@ -271,6 +272,7 @@ function insertWorkOrder({ performa_id = null, quotation_id = null, inquiry_id, 
       advance_date || null,
       advance_description || null,
       toNumber(advance_amount, 0),
+      currency,
     ],
   );
 
@@ -376,6 +378,7 @@ export function createWorkOrder(req, res) {
       advance_date: req.body?.advance_date,
       advance_description: req.body?.advance_description,
       advance_amount: req.body?.advance_amount,
+      currency: req.body?.currency || 'INR',
       rawItems: items,
     });
 
@@ -441,6 +444,7 @@ export function createWorkOrderFromPerforma(req, res) {
       checked_by: toNullableInt(req.body?.checked_by),
       approved_by: toNullableInt(req.body?.approved_by),
       status,
+      currency: req.body?.currency || snapshot.performa.currency || 'INR',
       rawItems: snapshot.items,
     });
 
@@ -499,6 +503,11 @@ export function getWorkOrders(req, res) {
     const filter = buildDateFilter(req.query || {}, 'wo.created_at', 'wo.created_by');
     const params = [...filter.params];
     sql += filter.clause;
+
+    // Data visibility: sub employees see only their own data
+    const vis = buildVisibilityFilter(req, 'wo.created_by');
+    sql += vis.clause;
+    params.push(...vis.params);
 
     if (req.query?.status) {
       sql += ' AND wo.status = ?';
@@ -654,7 +663,8 @@ export function updateWorkOrder(req, res) {
            advance_display = ?,
            advance_date = ?,
            advance_description = ?,
-           advance_amount = ?
+           advance_amount = ?,
+           currency = ?
        WHERE id = ? AND is_deleted = 0`,
       [
         hasProp('performa_id') ? toNullableInt(req.body.performa_id) : existing.performa_id,
@@ -681,6 +691,7 @@ export function updateWorkOrder(req, res) {
         hasProp('advance_date') ? (req.body.advance_date || null) : (existing.advance_date || null),
         hasProp('advance_description') ? (req.body.advance_description || null) : (existing.advance_description || null),
         hasProp('advance_amount') ? toNumber(req.body.advance_amount, 0) : (existing.advance_amount || 0),
+        req.body?.currency || existing.currency || 'INR',
         id,
       ],
     );

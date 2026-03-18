@@ -18,6 +18,7 @@ import { parseNum } from "@/lib/parse-number"
 import { FollowUpSection } from "@/components/follow-up-section"
 import { MultiSelectFilter } from "@/components/ui/multi-select-filter"
 import { Search } from "lucide-react"
+import { getSalesMenuItems, salesRouteMap } from "@/lib/menu"
 
 type Inquiry = {
   id: number
@@ -47,6 +48,7 @@ type QuotationItemForm = {
   discount_percent: string
   discount_amount: string
   gst_percent: string
+  show_image: boolean
 }
 
 type QuotationSummary = {
@@ -86,6 +88,7 @@ type QuotationDetailItem = {
   discount_percent: number
   discount_amount: number
   gst_percent: number
+  show_image?: number | boolean
 }
 
 type QuotationDetail = {
@@ -133,6 +136,7 @@ const emptyItem = (): QuotationItemForm => ({
   discount_percent: "0",
   discount_amount: "0",
   gst_percent: "0",
+  show_image: true,
 })
 
 const round2 = (value: number) => Math.round(value * 100) / 100
@@ -203,33 +207,11 @@ export default function QuotationsPage() {
   const { categoryMap } = useCategories()
 
   const [activeSection, setActiveSection] = useState("quotations")
-  const menuItems = [
-    { id: "inquiries", label: "Customer Inquiries" },
-    { id: "quotations", label: "Quotations" },
-    { id: "performas", label: "Performas" },
-    { id: "work-orders", label: "Work Orders" },
-    { id: "products", label: "Products" },
-    { id: "followups", label: "Follow Ups" },
-    { id: "reports", label: "Reports" },
-  ]
+  const menuItems = getSalesMenuItems(user)
 
   function handleSectionChange(section: string) {
-    const routeMap: Record<string, string> = {
-      inquiries: "/dashboard/inquiries",
-      quotations: "/dashboard/quotations",
-      performas: "/dashboard/performas",
-      "work-orders": "/dashboard/work-orders",
-      products: "/dashboard/products",
-      followups: "/dashboard/followups",
-      reports: "/dashboard/reports",
-    }
-
-    const target = routeMap[section]
-    if (target) {
-      router.push(target)
-      return
-    }
-
+    const target = salesRouteMap[section]
+    if (target) { router.push(target); return }
     setActiveSection("quotations")
   }
 
@@ -258,6 +240,7 @@ export default function QuotationsPage() {
   const [termsType, setTermsType] = useState<string>("")
   const [quotationTermsTemplates, setQuotationTermsTemplates] = useState<TermsTemplate[]>([])
   const [quotationType, setQuotationType] = useState<string>("")
+  const [currency, setCurrency] = useState<string>("INR")
   const [subcategories, setSubcategories] = useState<SubcategoryOption[]>([])
   const [pendingFollowUps, setPendingFollowUps] = useState<{ note: string; reminder_date: string }[]>([])
 
@@ -500,6 +483,7 @@ export default function QuotationsPage() {
     setDeclaration(defaultSettings.declaration)
     setSpecialNotes(defaultSettings.special_notes)
     setQuotationType("")
+    setCurrency("INR")
     setPendingFollowUps([])
   }
 
@@ -525,6 +509,7 @@ export default function QuotationsPage() {
         discount_percent: "0",
         discount_amount: "0",
         gst_percent: String(p.gst_percent || prodOpt?.gst_percent || 0),
+        show_image: true,
       }
     })
     setItems((prev) => {
@@ -581,6 +566,7 @@ export default function QuotationsPage() {
         discount_percent: parseNum(item.discount_percent),
         discount_amount: parseNum(item.discount_amount),
         gst_percent: parseNum(item.gst_percent),
+        show_image: item.show_image,
       }))
 
     if (sanitizedItems.length === 0) {
@@ -597,6 +583,7 @@ export default function QuotationsPage() {
         special_notes: specialNotes,
         items: sanitizedItems,
         quotation_type: quotationType || null,
+        currency,
       }
 
       const isUpdate = Boolean(editingId)
@@ -662,6 +649,7 @@ export default function QuotationsPage() {
       setDeclaration(quotation.declaration || "")
       setSpecialNotes(quotation.special_notes || "")
       setQuotationType((quotation as any).quotation_type || "")
+      setCurrency((quotation as any).currency || "INR")
       setShowForm(true)
 
       setItems(
@@ -674,6 +662,7 @@ export default function QuotationsPage() {
           discount_percent: String(item.discount_percent),
           discount_amount: String(item.discount_amount),
           gst_percent: String(item.gst_percent),
+          show_image: item.show_image !== undefined ? Boolean(item.show_image) : true,
         })),
       )
     } catch (error) {
@@ -845,6 +834,21 @@ export default function QuotationsPage() {
                 ))}
               </select>
             </div>
+            <div>
+              <Label>Currency</Label>
+              <select
+                className="w-full border border-gray-300 rounded-md h-10 px-3"
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+              >
+                <option value="INR">INR - Indian Rupee</option>
+                <option value="USD">USD - US Dollar</option>
+                <option value="EUR">EUR - Euro</option>
+                <option value="GBP">GBP - British Pound</option>
+                <option value="AED">AED - UAE Dirham</option>
+                <option value="JPY">JPY - Japanese Yen</option>
+              </select>
+            </div>
           </div>
 
           <div className="rounded border border-gray-100 p-3 bg-gray-50 text-sm grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -871,6 +875,7 @@ export default function QuotationsPage() {
                     <th className="px-2 py-2 text-left">Disc Amt</th>
                     <th className="px-2 py-2 text-left">GST %</th>
                     <th className="px-2 py-2 text-left">Line Total</th>
+                    <th className="px-2 py-2 text-center">Image?</th>
                     <th className="px-2 py-2 text-left">Action</th>
                   </tr>
                 </thead>
@@ -905,6 +910,15 @@ export default function QuotationsPage() {
                         <td className="px-2 py-2"><Input value={item.discount_amount} onChange={(e) => updateItem(index, { discount_amount: e.target.value })} /></td>
                         <td className="px-2 py-2"><Input value={item.gst_percent} onChange={(e) => updateItem(index, { gst_percent: e.target.value })} /></td>
                         <td className="px-2 py-2 font-medium">{round2(total).toFixed(2)}</td>
+                        <td className="px-2 py-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={item.show_image}
+                            onChange={(e) => updateItem(index, { show_image: e.target.checked })}
+                            className="w-4 h-4 accent-orange-500"
+                            title="Show image in PDF"
+                          />
+                        </td>
                         <td className="px-2 py-2">
                           <Button
                             type="button"

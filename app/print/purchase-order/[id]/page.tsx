@@ -110,6 +110,7 @@ export default function PurchaseOrderPrintPage() {
             { header: "Price", width: 70, align: "right", key: "unit_price" },
             { header: "Total", width: 80, align: "right", key: "total_price" },
           ],
+          currency: (po as any).currency || "INR",
         })
 
         nextPdfUrl = URL.createObjectURL(pdfBlob)

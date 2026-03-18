@@ -76,6 +76,7 @@ function calculateQuotation(items) {
       total: totals.total,
       base_amount: totals.base,
       gst_amount: totals.gst_amount,
+      show_image: rawItem?.show_image !== undefined ? (rawItem.show_image ? 1 : 0) : 1,
     };
   });
 
@@ -113,14 +114,16 @@ function getQuotationByIdWithRelations(id) {
     `SELECT
       qi.*,
       COALESCE(mpc.category_name, spc.category_name) AS category_name,
-      CASE WHEN qi.product_type = 'machine' THEN mp.product_name ELSE sp.product_name END AS product_name,
-      CASE WHEN qi.product_type = 'machine' THEN mp.product_code ELSE sp.product_code END AS product_code,
-      CASE WHEN qi.product_type = 'machine' THEN mp.model_number ELSE sp.model_number END AS model_number,
+      COALESCE(mp.product_name, sp.product_name) AS product_name,
+      COALESCE(mp.product_code, sp.product_code) AS product_code,
+      COALESCE(mp.model_number, sp.model_number) AS model_number,
+      COALESCE(mp.specifications, sp.specifications) AS specifications,
+      COALESCE(mp.image_path, sp.image_path) AS image_path,
       CASE WHEN qi.product_type = 'machine' THEN COALESCE(mp.hsn_code, mp.sac_code) ELSE COALESCE(sp.hsn_code, sp.sac_code) END AS hsn_sac_code,
       'Nos' AS unit
     FROM quotation_items qi
-    LEFT JOIN machine_products mp ON qi.product_type = 'machine' AND mp.id = qi.product_id
-    LEFT JOIN spare_products sp ON qi.product_type = 'spare' AND sp.id = qi.product_id
+    LEFT JOIN machine_products mp ON mp.id = qi.product_id AND qi.product_type = 'machine'
+    LEFT JOIN spare_products sp ON sp.id = qi.product_id AND qi.product_type = 'spare'
     LEFT JOIN product_categories mpc ON mpc.id = mp.category_id
     LEFT JOIN product_categories spc ON spc.id = sp.category_id
     WHERE qi.quotation_id = ?
@@ -159,6 +162,8 @@ export function createQuotation(req, res) {
     const hasDeclaration = Object.prototype.hasOwnProperty.call(req.body || {}, 'declaration');
     const hasSpecialNotes = Object.prototype.hasOwnProperty.call(req.body || {}, 'special_notes');
 
+    const currency = req.body?.currency || 'INR';
+
     const insert = run(
       `INSERT INTO quotations (
         quotation_number,
@@ -174,8 +179,9 @@ export function createQuotation(req, res) {
         attention,
         declaration,
         special_notes,
+        currency,
         is_deleted
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       [
         quotation_number,
         inquiry_id,
@@ -190,6 +196,7 @@ export function createQuotation(req, res) {
         hasAttention ? req.body.attention : (defaults.attention || null),
         hasDeclaration ? req.body.declaration : (defaults.declaration || null),
         hasSpecialNotes ? req.body.special_notes : (defaults.special_notes || null),
+        currency,
       ],
     );
 
@@ -206,8 +213,9 @@ export function createQuotation(req, res) {
           discount_percent,
           discount_amount,
           gst_percent,
-          total
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          total,
+          show_image
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           quotationId,
           item.product_type,
@@ -218,6 +226,7 @@ export function createQuotation(req, res) {
           item.discount_amount,
           item.gst_percent,
           item.total,
+          item.show_image,
         ],
       );
     }
@@ -354,8 +363,9 @@ export function updateQuotation(req, res) {
             discount_percent,
             discount_amount,
             gst_percent,
-            total
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            total,
+            show_image
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             id,
             item.product_type,
@@ -366,10 +376,13 @@ export function updateQuotation(req, res) {
             item.discount_amount,
             item.gst_percent,
             item.total,
+            item.show_image,
           ],
         );
       }
     }
+
+    const updatedCurrency = req.body?.currency || existing.currency || 'INR';
 
     run(
       `UPDATE quotations
@@ -383,7 +396,8 @@ export function updateQuotation(req, res) {
            terms_conditions = ?,
            attention = ?,
            declaration = ?,
-           special_notes = ?
+           special_notes = ?,
+           currency = ?
        WHERE id = ? AND is_deleted = 0`,
       [
         inquiry_id,
@@ -397,6 +411,7 @@ export function updateQuotation(req, res) {
         Object.prototype.hasOwnProperty.call(req.body || {}, 'attention') ? (req.body.attention || null) : existing.attention,
         Object.prototype.hasOwnProperty.call(req.body || {}, 'declaration') ? (req.body.declaration || null) : existing.declaration,
         Object.prototype.hasOwnProperty.call(req.body || {}, 'special_notes') ? (req.body.special_notes || null) : existing.special_notes,
+        updatedCurrency,
         id,
       ],
     );

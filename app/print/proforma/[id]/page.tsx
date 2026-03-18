@@ -129,6 +129,7 @@ export default function ProformaPrintPage() {
           attention: defaults.attention || null,
           declaration: defaults.declaration || null,
           specialNotes: defaults.special_notes || null,
+          currency: (normalizedPerforma as any).currency || "INR",
         })
 
         nextPdfUrl = URL.createObjectURL(pdfBlob)
